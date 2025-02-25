@@ -12,6 +12,7 @@ function RegisterPage() {
   const handleRegister = async (e) => {
     e.preventDefault();
     setError('');
+    console.log("Register form submitted with values:", { firstName, lastName, email, passwordLength: password.length });
 
     try {
       const response = await fetch('http://localhost:5000/api/users/register', {
@@ -24,7 +25,9 @@ function RegisterPage() {
           password 
         })
       });
+      console.log("Response status:", response.status);
       const data = await response.json();
+      console.log("Response data:", data);
 
       if (!response.ok) {
         setError(data.message || 'Błąd podczas rejestracji');
@@ -33,6 +36,7 @@ function RegisterPage() {
         navigate('/login');
       }
     } catch (err) {
+      console.error("Network error during registration:", err);
       setError('Błąd sieciowy.');
     }
   };
