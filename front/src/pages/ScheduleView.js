@@ -47,7 +47,7 @@ function ScheduleView({ cityId }) {
 
   const fetchEmployees = async () => {
     try {
-      const res = await fetch(`${backendUrl}/api/employees/city/${cityId}`, {
+      const res = await fetch(`/api/employees/city/${cityId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
@@ -59,7 +59,7 @@ function ScheduleView({ cityId }) {
 
   const fetchRoutes = async () => {
     try {
-      const res = await fetch(`${backendUrl}/api/routes/city/${cityId}`, {
+      const res = await fetch(`/api/routes/city/${cityId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
@@ -85,7 +85,7 @@ function ScheduleView({ cityId }) {
 
   const fetchLabels = async () => {
     try {
-      const res = await fetch(`${backendUrl}/api/labels`, {
+      const res = await fetch(`/api/labels`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
@@ -98,7 +98,7 @@ function ScheduleView({ cityId }) {
   const fetchSchedule = async () => {
     try {
       const res = await fetch(
-        `${backendUrl}/api/schedule/city/${cityId}?month=${month}&year=${year}`,
+        `/api/schedule/city/${cityId}?month=${month}&year=${year}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       const data = await res.json();
@@ -147,7 +147,7 @@ function ScheduleView({ cityId }) {
 
     console.log("Updating schedule (employee view):", { employeeId, date, route_id, label });
     try {
-      const res = await fetch(`${backendUrl}/api/schedule/update-cell`, {
+      const res = await fetch(`/api/schedule/update-cell`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -172,7 +172,7 @@ function ScheduleView({ cityId }) {
     const date = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     console.log("Updating schedule (route view):", { date, routeId, employeeId });
     try {
-      const res = await fetch(`${backendUrl}/api/schedule/update-cell`, {
+      const res = await fetch(`/api/schedule/update-cell`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

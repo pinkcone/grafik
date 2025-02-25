@@ -33,7 +33,7 @@ function RoutesPage() {
   const fetchRoutes = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${backendUrl}/api/routes`, {
+      const res = await fetch(`/api/routes`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
@@ -46,7 +46,7 @@ function RoutesPage() {
   const fetchCities = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${backendUrl}/api/cities`, {
+      const res = await fetch(`/api/cities`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
@@ -99,7 +99,7 @@ function RoutesPage() {
     if (!window.confirm('Czy na pewno usunąć trasę?')) return;
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${backendUrl}/api/routes/${id}`, {
+      const res = await fetch(`/api/routes/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -138,7 +138,7 @@ function RoutesPage() {
 
     if (popupMode === 'add') {
       try {
-        const res = await fetch(`${backendUrl}/api/routes`, {
+        const res = await fetch(`/api/routes`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -157,7 +157,7 @@ function RoutesPage() {
       }
     } else if (popupMode === 'edit' && currentRoute) {
       try {
-        const res = await fetch(`${backendUrl}/api/routes/${currentRoute.id}`, {
+        const res = await fetch(`/api/routes/${currentRoute.id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',

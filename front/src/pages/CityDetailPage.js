@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import Popup from '../components/Popup';
 import ScheduleView from './ScheduleView'; 
-const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
+
 
 function CityDetailPage() {
   const { cityId } = useParams();
@@ -51,7 +51,7 @@ function CityDetailPage() {
   // Pobranie danych miasta
   const fetchCity = async () => {
     try {
-      const res = await fetch(`${backendUrl}/api/cities/${cityId}`, {
+      const res = await fetch(`/api/cities/${cityId}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
@@ -64,7 +64,7 @@ function CityDetailPage() {
   // Pobranie pracowników dla danego miasta
   const fetchEmployees = async () => {
     try {
-      const res = await fetch(`${backendUrl}/api/employees/city/${cityId}`, {
+      const res = await fetch(`/api/employees/city/${cityId}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
@@ -77,7 +77,7 @@ function CityDetailPage() {
   // Pobranie tras dla danego miasta
   const fetchRoutes = async () => {
     try {
-      const res = await fetch(`${backendUrl}/api/routes/city/${cityId}`, {
+      const res = await fetch(`/api/routes/city/${cityId}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
@@ -93,7 +93,7 @@ function CityDetailPage() {
   // Pobranie listy wszystkich miast (do selectów)
   const fetchAllCities = async () => {
     try {
-      const res = await fetch(`${backendUrl}/api/cities`, {
+      const res = await fetch(`/api/cities`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
@@ -134,7 +134,7 @@ function CityDetailPage() {
     try {
       let res;
       if (employeeModalMode === 'add') {
-        res = await fetch(`${backendUrl}/api/employees`, {
+        res = await fetch(`/api/employees`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -143,7 +143,7 @@ function CityDetailPage() {
           body: JSON.stringify(employeeData),
         });
       } else {
-        res = await fetch(`${backendUrl}/api/employees/${currentEmployee.id}`, {
+        res = await fetch(`/api/employees/${currentEmployee.id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -166,7 +166,7 @@ function CityDetailPage() {
   const handleEmployeeDelete = async (empId) => {
     if (!window.confirm('Czy na pewno usunąć tego pracownika?')) return;
     try {
-      const res = await fetch(`${backendUrl}/api/employees/${empId}`, {
+      const res = await fetch(`/api/employees/${empId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -241,7 +241,7 @@ function CityDetailPage() {
     try {
       let res;
       if (routeModalMode === 'add') {
-        res = await fetch(`${backendUrl}/api/routes`, {
+        res = await fetch(`/api/routes`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -250,7 +250,7 @@ function CityDetailPage() {
           body: JSON.stringify(routeData),
         });
       } else {
-        res = await fetch(`${backendUrl}/api/routes/${currentRoute.id}`, {
+        res = await fetch(`/api/routes/${currentRoute.id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -273,7 +273,7 @@ function CityDetailPage() {
   const handleRouteDelete = async (routeId) => {
     if (!window.confirm('Czy na pewno usunąć tę trasę?')) return;
     try {
-      const res = await fetch(`${backendUrl}/api/routes/${routeId}`, {
+      const res = await fetch(`/api/routes/${routeId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });

@@ -26,7 +26,7 @@ function EmployeesPage() {
   const fetchEmployees = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${backendUrl}/api/employees`, {
+      const res = await fetch(`/api/employees`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
@@ -72,7 +72,7 @@ function EmployeesPage() {
     if (!window.confirm('Czy na pewno usunąć pracownika?')) return;
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${backendUrl}/api/employees/${id}`, {
+      const res = await fetch(`/api/employees/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -95,7 +95,7 @@ function EmployeesPage() {
 
     if (popupMode === 'add') {
       try {
-        const res = await fetch(`${backendUrl}/api/employees`, {
+        const res = await fetch(`/api/employees`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -114,7 +114,7 @@ function EmployeesPage() {
       }
     } else if (popupMode === 'edit' && currentEmployee) {
       try {
-        const res = await fetch(`${backendUrl}/api/employees/${currentEmployee.id}`, {
+        const res = await fetch(`/api/employees/${currentEmployee.id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Popup from '../components/Popup';
 
-const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
+
 
 function CitiesPage() {
   const [cities, setCities] = useState([]);
@@ -22,7 +22,7 @@ function CitiesPage() {
   const fetchCities = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${backendUrl}/api/cities`, {
+      const res = await fetch(`/api/cities`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
@@ -62,7 +62,7 @@ function CitiesPage() {
     if (!window.confirm('Czy na pewno chcesz usunąć to miasto?')) return;
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${backendUrl}/api/cities/${cityId}`, {
+      const res = await fetch(`/api/cities/${cityId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -83,7 +83,7 @@ function CitiesPage() {
     if (popupMode === 'add') {
       // Dodawanie miasta
       try {
-        const res = await fetch(`${backendUrl}/api/cities`, {
+        const res = await fetch(`/api/cities`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -103,7 +103,7 @@ function CitiesPage() {
     } else if (popupMode === 'edit' && currentCity) {
       // Edycja miasta
       try {
-        const res = await fetch(`${backendUrl}/api/cities/${currentCity.id}`, {
+        const res = await fetch(`/api/cities/${currentCity.id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',

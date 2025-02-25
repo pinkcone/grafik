@@ -22,7 +22,7 @@ function LabelsPage() {
 
   const fetchLabels = async () => {
     try {
-      const res = await fetch(`${backendUrl}/api/labels`, {
+      const res = await fetch(`/api/labels`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
@@ -60,7 +60,7 @@ function LabelsPage() {
     try {
       let res;
       if (modalMode === 'add') {
-        res = await fetch(`${backendUrl}/api/labels`, {
+        res = await fetch(`/api/labels`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -69,7 +69,7 @@ function LabelsPage() {
           body: JSON.stringify(labelData)
         });
       } else {
-        res = await fetch(`${backendUrl}/api/labels/${currentCode}`, {
+        res = await fetch(`/api/labels/${currentCode}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -92,7 +92,7 @@ function LabelsPage() {
   const handleDelete = async (labelCode) => {
     if (!window.confirm("Czy na pewno usunąć etykietę?")) return;
     try {
-      const res = await fetch(`${backendUrl}/api/labels/${labelCode}`, {
+      const res = await fetch(`/api/labels/${labelCode}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
