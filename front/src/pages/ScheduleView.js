@@ -48,7 +48,9 @@ function ScheduleView({ cityId }) {
   const fetchEmployees = async () => {
     try {
       const res = await fetch(`/api/employees/city/${cityId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}` },
+        // WYMUSZAMY brak cache
+        cache: 'no-store'
       });
       const data = await res.json();
       setEmployees(Array.isArray(data) ? data : []);
@@ -60,7 +62,9 @@ function ScheduleView({ cityId }) {
   const fetchRoutes = async () => {
     try {
       const res = await fetch(`/api/routes/city/${cityId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}` },
+        // WYMUSZAMY brak cache
+        cache: 'no-store'
       });
       const data = await res.json();
       // Filtrujemy tylko trasy z niepustymi segmentami
@@ -86,7 +90,9 @@ function ScheduleView({ cityId }) {
   const fetchLabels = async () => {
     try {
       const res = await fetch(`/api/labels`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}` },
+        // WYMUSZAMY brak cache
+        cache: 'no-store'
       });
       const data = await res.json();
       setLabels(Array.isArray(data) ? data : []);
@@ -99,7 +105,11 @@ function ScheduleView({ cityId }) {
     try {
       const res = await fetch(
         `/api/schedule/city/${cityId}?month=${month}&year=${year}`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
+        {
+          headers: { 'Authorization': `Bearer ${token}` },
+          // WYMUSZAMY brak cache
+          cache: 'no-store'
+        }
       );
       const data = await res.json();
       console.log("Fetched schedule:", data);
@@ -153,6 +163,8 @@ function ScheduleView({ cityId }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
+        // WYMUSZAMY brak cache
+        cache: 'no-store',
         body: JSON.stringify({ date, employee_id: employeeId, route_id, label })
       });
       if (!res.ok) {
@@ -178,6 +190,8 @@ function ScheduleView({ cityId }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
+        // WYMUSZAMY brak cache
+        cache: 'no-store',
         body: JSON.stringify({ date, employee_id: employeeId, route_id: routeId, label: null })
       });
       if (!res.ok) {
@@ -231,10 +245,11 @@ function ScheduleView({ cityId }) {
   };
 
   // Obliczenie podsumowania godzin dla pracownika
+  const daysInM = (m, y) => new Date(y, m, 0).getDate();
   const calculateEmployeeHours = (employeeId) => {
-    const daysInM = daysInMonth(month, year);
+    const dim = daysInM(month, year);
     let total = 0;
-    for (let d = 1; d <= daysInM; d++) {
+    for (let d = 1; d <= dim; d++) {
       const date = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
       const cell = schedules.find(s => s.employee_id === employeeId && s.date === date);
       if (cell && cell.route_id) {
