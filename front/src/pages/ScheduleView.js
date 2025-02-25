@@ -150,34 +150,65 @@ function ScheduleView({ cityId }) {
   };
 
   // Update w widoku pracowników
-  const updateScheduleCell = async (employeeId, date, newValue) => {
-    let route_id = null, label = null;
-    if (newValue.startsWith("R:")) route_id = newValue.substring(2);
-    else if (newValue.startsWith("L:")) label = newValue.substring(2);
-
-    console.log("Updating schedule (employee view):", { employeeId, date, route_id, label });
-    try {
-      const res = await fetch(`/api/schedule/update-cell`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        // WYMUSZAMY brak cache
-        cache: 'no-store',
-        body: JSON.stringify({ date, employee_id: employeeId, route_id, label })
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        console.error("Error updating schedule (employee view):", data);
-        alert(data.message || "Błąd aktualizacji grafiku");
-      }
-      await fetchSchedule();
-    } catch (error) {
-      console.error("Update schedule error (employee view):", error);
-      alert("Błąd aktualizacji grafiku (exception)");
+  // Aktualizacja komórki harmonogramu dla widoku "wg pracowników"
+const updateScheduleCell = async (employeeId, date, newValue) => {
+  let route_id = null, label = null;
+  if (newValue.startsWith("R:")) {
+    route_id = newValue.substring(2);
+  } else if (newValue.startsWith("L:")) {
+    label = newValue.substring(2);
+  }
+  console.log("Updating schedule (employee view):", { employeeId, date, route_id, label });
+  try {
+    const res = await fetch(`/api/schedule/update-cell`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      // Wymuszenie, aby przeglądarka nie korzystała z cache:
+      cache: 'no-store',
+      body: JSON.stringify({ date, employee_id: employeeId, route_id, label })
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      console.error("Error updating schedule (employee view):", data);
+      alert(data.message || "Błąd aktualizacji grafiku");
     }
-  };
+    await fetchSchedule(); // odświeżenie harmonogramu
+  } catch (error) {
+    console.error("Update schedule error (employee view):", error);
+    alert("Błąd aktualizacji grafiku (exception)");
+  }
+};
+
+// Funkcja pomocnicza, która zwraca dostępne opcje dla danej komórki (widok wg pracowników)
+const getAvailableOptionsForEmployeeCell = (employeeId, day) => {
+  const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  // Pobieramy ID tras, które są już przypisane do innego pracownika tego dnia
+  const assignedRouteIds = schedules
+    .filter(s => s.date === date && s.route_id && s.employee_id !== employeeId)
+    .map(s => s.route_id.toString());
+
+  // Dostępne trasy to te, które nie są przypisane do innego pracownika tego dnia
+  const availableRoutes = routes.filter(r => !assignedRouteIds.includes(r.id.toString()));
+
+  // Mapujemy dostępne trasy na opcje selecta
+  const routeOptions = availableRoutes.map(r => ({
+    value: `R:${r.id}`,
+    label: `${r.name} (${calculateDuration(r).toFixed(2)}h)`
+  }));
+
+  // Mapujemy etykiety na opcje selecta (wszystkie są dostępne)
+  const labelOptions = labels.map(l => ({
+    value: `L:${l.code}`,
+    label: `Label: ${l.code}`
+  }));
+
+  // Zwracamy listę opcji – pierwsza opcja to pusta wartość
+  return [{ value: "", label: "-- brak --" }, ...routeOptions, ...labelOptions];
+};
+
 
   // Update w widoku tras
   const updateScheduleForRouteCell = async (routeId, day, employeeId) => {
@@ -207,23 +238,7 @@ function ScheduleView({ cityId }) {
   };
 
   // Funkcja pomocnicza – w widoku pracowników filtruje trasy, które są już przypisane do innego pracownika
-  const getAvailableOptionsForEmployeeCell = (employeeId, day) => {
-    const date = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    // Wykluczamy trasy, które są już przypisane do innego pracownika tego dnia
-    const assignedRouteIds = schedules
-      .filter(s => s.date === date && s.route_id && s.employee_id !== employeeId)
-      .map(s => s.route_id.toString());
-    const availableRoutes = routes.filter(r => !assignedRouteIds.includes(r.id.toString()));
-    const routeOptions = availableRoutes.map(r => ({
-      value: `R:${r.id}`,
-      label: `${r.name} (${calculateDuration(r).toFixed(2)}h)`
-    }));
-    const labelOptions = labels.map(l => ({
-      value: `L:${l.code}`,
-      label: `${l.code}`
-    }));
-    return [{ value: "", label: "-- brak --" }, ...routeOptions, ...labelOptions];
-  };
+ 
 
   // Funkcja pomocnicza – w widoku tras filtruje pracowników
   const getAvailableEmployeesForRouteCell = (routeId, day) => {
