@@ -6,10 +6,11 @@ const app = express();
 const PORT = 5000;
 
 // Ustawienia CORS – zezwalamy tylko na żądania z domeny http://jagrafiko.pl
-const allowedOrigins = ['http://jagrafiko.pl'];
+const allowedOrigins = ['http://jagrafiko.pl', 'http://localhost:5000/', 'http://localhost:3000'];
 const corsOptions = {
   origin: function(origin, callback) {
     // Jeśli brak origin (np. request z narzędzi typu curl) – zezwalamy
+    console.log("Origin:", origin);
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
@@ -39,9 +40,7 @@ app.use('/api/labels', labelRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/schedule', scheduleRoutes);
 
-app.get('/', (req, res) => {
-  res.send('Backend działa i tabele są zsynchonizowane!');
-});
+
 
 // Middleware obsługujący błędy – loguje wszystkie napotkane błędy
 app.use((err, req, res, next) => {

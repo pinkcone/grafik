@@ -10,26 +10,13 @@ import RegisterPage from './pages/RegisterPage';
 import Header from './components/Header';
 
 function App() {
+  // Pobieramy token z localStorage, aby określić czy użytkownik jest zalogowany
   const token = localStorage.getItem('token');
 
   return (
     <div>
       {token && <Header />}
-      <nav>
-        <ul>
-          {token ? (
-            <>
-              <li><Link to="/cities">Moje Miasta</Link></li>
-              <li><Link to="/labels">Moje Lebale</Link></li>
-            </>
-          ) : (
-            <>
-              <li><Link to="/login">Logowanie</Link></li>
-              <li><Link to="/register">Rejestracja</Link></li>
-            </>
-          )}
-        </ul>
-      </nav>
+      
       <Routes>
         {token ? (
           <>
@@ -37,13 +24,15 @@ function App() {
             <Route path="/cities" element={<CitiesPage />} />
             <Route path="/cities/:cityId" element={<CityDetailPage />} />
             <Route path="/labels" element={<LabelsPage />} />
+            {/* Wszystkie nieznane ścieżki przekierowujemy do strony głównej */}
             <Route path="*" element={<HomePage />} />
           </>
         ) : (
           <>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
-            <Route path="*" element={<Navigate to="/login" replace />} />
+            {/* Jeśli użytkownik nie jest zalogowany, każda inna ścieżka przekierowuje do logowania */}
+            
           </>
         )}
       </Routes>

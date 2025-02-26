@@ -127,27 +127,27 @@ function ScheduleView({ cityId }) {
   }
 
   // Obliczenie czasu trasy w godzinach na podstawie segmentów
-  const calculateDuration = (route) => {
-    let wh = route.working_hours;
-    if (typeof wh === "string") {
-      try {
-        wh = JSON.parse(wh);
-      } catch (e) {
-        console.error("Error parsing working_hours:", e);
-        return 0;
-      }
-    }
-    if (wh && Array.isArray(wh.segments)) {
-      let totalMinutes = 0;
-      wh.segments.forEach(seg => {
-        const [startH, startM] = seg.start.split(':').map(Number);
-        const [endH, endM] = seg.end.split(':').map(Number);
-        totalMinutes += (endH * 60 + endM) - (startH * 60 + startM);
-      });
-      return totalMinutes / 60;
-    }
-    return 0;
-  };
+  // const calculateDuration = (route) => {
+  //   let wh = route.working_hours;
+  //   if (typeof wh === "string") {
+  //     try {
+  //       wh = JSON.parse(wh);
+  //     } catch (e) {
+  //       console.error("Error parsing working_hours:", e);
+  //       return 0;
+  //     }
+  //   }
+  //   if (wh && Array.isArray(wh.segments)) {
+  //     let totalMinutes = 0;
+  //     wh.segments.forEach(seg => {
+  //       const [startH, startM] = seg.start.split(':').map(Number);
+  //       const [endH, endM] = seg.end.split(':').map(Number);
+  //       totalMinutes += (endH * 60 + endM) - (startH * 60 + startM);
+  //     });
+  //     return totalMinutes / 60;
+  //   }
+  //   return 0;
+  // };
 
   // Update w widoku pracowników
   // Aktualizacja komórki harmonogramu dla widoku "wg pracowników"
@@ -202,7 +202,7 @@ const getAvailableOptionsForEmployeeCell = (employeeId, day) => {
   // Mapujemy etykiety na opcje selecta (wszystkie są dostępne)
   const labelOptions = labels.map(l => ({
     value: `L:${l.code}`,
-    label: `Label: ${l.code}`
+    label: `${l.code}`
   }));
 
   // Zwracamy listę opcji – pierwsza opcja to pusta wartość
@@ -262,20 +262,72 @@ const getAvailableOptionsForEmployeeCell = (employeeId, day) => {
   // Obliczenie podsumowania godzin dla pracownika
   const daysInM = (m, y) => new Date(y, m, 0).getDate();
   const calculateEmployeeHours = (employeeId) => {
-    const dim = daysInM(month, year);
+    const dim = daysInM(month, year); // liczba dni w miesiącu
     let total = 0;
+  
+    // Znajdź obiekt pracownika, aby odczytać jego part_time
+    const employee = employees.find(e => e.id === employeeId);
+    const partTime = employee ? employee.part_time : 1.0; // domyślnie 1.0, jeśli brak
+  
     for (let d = 1; d <= dim; d++) {
-      const date = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const date = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      // Znajdź rekord w schedule
       const cell = schedules.find(s => s.employee_id === employeeId && s.date === date);
-      if (cell && cell.route_id) {
+  
+      if (!cell) continue; // brak wpisu – brak godzin
+  
+      // Jeśli mamy przypisaną trasę
+      if (cell.route_id) {
+        // Szukamy obiektu trasy
         const route = routes.find(r => r.id.toString() === cell.route_id.toString());
         if (route) {
-          total += calculateDuration(route);
+          total += calculateDuration(route); 
+        }
+      }
+      // Jeśli mamy przypisaną etykietę (label)
+      else if (cell.label) {
+        // Znajdź obiekt etykiety
+        const labelObj = labels.find(l => l.code === cell.label);
+        if (labelObj) {
+          // Załóżmy, że labelObj.default_hours to liczba godzin przypisanych do tej etykiety
+          // Mnożymy przez part_time
+          total += (labelObj.default_hours * partTime);
         }
       }
     }
+  
     return total.toFixed(2);
   };
+  
+  // Funkcja calculateDuration – bez zmian, liczy godziny na podstawie segments w trasie
+  const calculateDuration = (route) => {
+    let wh = route.working_hours;
+    if (typeof wh === "string") {
+      try {
+        wh = JSON.parse(wh);
+      } catch (e) {
+        console.error("Error parsing working_hours:", e);
+        return 0;
+      }
+    }
+    if (wh && Array.isArray(wh.segments)) {
+      let totalMinutes = 0;
+      wh.segments.forEach(seg => {
+        const [startH, startM] = seg.start.split(':').map(Number);
+        const [endH, endM] = seg.end.split(':').map(Number);
+        const startMinutes = startH * 60 + startM;
+        let endMinutes = endH * 60 + endM;
+        // Jeśli shift kończy się po północy, endMinutes będzie mniejsze niż startMinutes.
+        if (endMinutes < startMinutes) {
+          endMinutes += 24 * 60; // dodajemy 24 godziny w minutach
+        }
+        totalMinutes += endMinutes - startMinutes;
+      });
+      return totalMinutes / 60;
+    }
+    return 0;
+  };
+  
 
   // Eksport do XLSX
   const handleExportXLSX = () => {
