@@ -357,17 +357,33 @@ const getAvailableOptionsForEmployeeCell = (employeeId, day) => {
   const prepareEmployeesSheet = () => {
     const header = ["Pracownik", ...days.map(d => `${d}`), "Suma godzin"];
     const sheetData = [header];
-
+  
     employees.forEach(emp => {
       const row = [`${emp.first_name} ${emp.last_name}`];
       days.forEach(day => {
-        const date = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        const date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
         const cell = schedules.find(s => s.employee_id === emp.id && s.date === date);
         let cellValue = "";
         if (cell) {
           if (cell.route_id) {
             const route = routes.find(r => r.id.toString() === cell.route_id.toString());
-            cellValue = route ? route.name : `RouteID=${cell.route_id}`;
+            if (route) {
+              let wh = route.working_hours;
+              if (typeof wh === "string") {
+                try {
+                  wh = JSON.parse(wh);
+                } catch (e) {
+                  console.error("Error parsing working_hours:", e);
+                  wh = null;
+                }
+              }
+              if (wh && Array.isArray(wh.segments) && wh.segments.length > 0) {
+                const seg = wh.segments[0];
+                cellValue = `${seg.start}-${seg.end}`;
+              }
+            } else {
+              cellValue = `RouteID=${cell.route_id}`;
+            }
           } else if (cell.label) {
             cellValue = `${cell.label}`;
           }
@@ -377,9 +393,10 @@ const getAvailableOptionsForEmployeeCell = (employeeId, day) => {
       row.push(calculateEmployeeHours(emp.id));
       sheetData.push(row);
     });
-
+  
     return sheetData;
   };
+  
 
   // Konwertuje widok "routes" do tablicy 2D (AOA)
   const prepareRoutesSheet = () => {
