@@ -1,0 +1,39 @@
+#root{
+    background-color: #e0f0f0;
+    height: 100vh;
+}
+body{
+    background-color: #e0f0f0;
+}
+.main{
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+.main input{
+    width: 300px;
+    border-radius: 30px;
+    padding: 10px 20px;
+    border: 1px black solid;
+    margin-bottom: 10px;
+    font-size: 20px;
+}
+.main form{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.main form button{
+    padding: 10px 20px;
+    font-size: 18px;
+    border-radius: 20px;
+    border: none;
+    background-color: black;
+    color: white;
+}
+.main form button:hover{
+    background-color: aliceblue;
+    color: black;
+    cursor: pointer;
+}

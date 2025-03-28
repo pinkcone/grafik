@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Popup from '../components/Popup';
-
+import "../styles/CityPage.css";
 
 
 function CitiesPage() {
@@ -124,7 +124,7 @@ function CitiesPage() {
   };
 
   return (
-    <div>
+    <div className='main'>
       <h2>Moje Miasta</h2>
       <button onClick={handleAddCityClick}>Dodaj miasto</button>
       <table border="1">

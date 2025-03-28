@@ -359,7 +359,7 @@ const getAvailableOptionsForEmployeeCell = (employeeId, day) => {
     const sheetData = [header];
   
     employees.forEach(emp => {
-      const row = [`${emp.first_name} ${emp.last_name}`];
+      const row = [`${emp.last_name} ${emp.first_name}`];
       days.forEach(day => {
         const date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
         const cell = schedules.find(s => s.employee_id === emp.id && s.date === date);
@@ -412,7 +412,7 @@ const getAvailableOptionsForEmployeeCell = (employeeId, day) => {
         if (cell && cell.employee_id) {
           const emp = employees.find(e => e.id === cell.employee_id);
           if (emp) {
-            cellValue = `${emp.first_name} ${emp.last_name}`;
+            cellValue = `${emp.last_name} ${emp.first_name}`;
           } else {
             cellValue = `EmpID=${cell.employee_id}`;
           }
@@ -485,7 +485,7 @@ const getAvailableOptionsForEmployeeCell = (employeeId, day) => {
             <tbody>
               {employees.map(emp => (
                 <tr key={emp.id}>
-                  <td>{emp.first_name} {emp.last_name}</td>
+                  <td>{emp.last_name} {emp.first_name}</td>
                   {days.map(day => {
                     const date = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
                     const cell = schedules.find(s => s.employee_id === emp.id && s.date === date);
