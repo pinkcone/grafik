@@ -378,8 +378,10 @@ const getAvailableOptionsForEmployeeCell = (employeeId, day) => {
                 }
               }
               if (wh && Array.isArray(wh.segments) && wh.segments.length > 0) {
-                const seg = wh.segments[0];
-                cellValue = `${seg.start}-${seg.end}`;
+                // Łączymy wszystkie segmenty, oddzielając je znakiem nowej linii
+                cellValue = wh.segments
+                  .map(seg => `${seg.start}-${seg.end}`)
+                  .join("\n");
               }
             } else {
               cellValue = `RouteID=${cell.route_id}`;
