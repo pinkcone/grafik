@@ -74,13 +74,12 @@ exports.getCitySchedule = async (req, res) => {
   console.log("Query:", { month, year });
 
   try {
-    // Przykładowa logika – pobieramy grafiki w zakresie od 1 do 31 danego miesiąca
+    // Ustalanie ostatniego dnia miesiąca dynamicznie
+    const lastDay = new Date(year, month, 0).getDate();
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = `${year}-${String(month).padStart(2, '0')}-31`;
+    const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
     console.log("Zakres dat:", startDate, endDate);
 
-    // W typowej aplikacji sprawdzamy, jacy pracownicy należą do cityId, a potem pobieramy
-    // schedule tylko dla nich. Dla uproszczenia – pobieramy wszystkie z date w tym przedziale:
     const schedules = await Schedule.findAll({
       where: {
         date: { [Op.between]: [startDate, endDate] }

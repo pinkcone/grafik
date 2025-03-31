@@ -24,7 +24,7 @@ function Header() {
   const handleLogout = () => {
     localStorage.removeItem('token');
     // Jeśli zapisywałeś dodatkowe dane, usuń je również (np. localStorage.removeItem('userName'))
-    navigate('/login');
+    window.location.href = "/login";
   };
 
   return (
