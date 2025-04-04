@@ -2,7 +2,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
-
+import "../styles/Header.css";
 function Header() {
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
@@ -16,6 +16,7 @@ function Header() {
       userName = decoded.first_name && decoded.last_name 
         ? `${decoded.first_name} ${decoded.last_name}` 
         : decoded.email;
+        console.log(decoded.first_name);
     } catch (error) {
       console.error('Błąd dekodowania tokena:', error);
     }
@@ -23,18 +24,11 @@ function Header() {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
-    // Jeśli zapisywałeś dodatkowe dane, usuń je również (np. localStorage.removeItem('userName'))
     window.location.href = "/login";
   };
 
   return (
-    <div style={{
-      padding: '10px', 
-      backgroundColor: '#eee', 
-      display: 'flex', 
-      justifyContent: 'space-between', 
-      alignItems: 'center'
-    }}>
+    <div className='header-div'>
       <span>Witaj, {userName || 'użytkowniku'}!</span>
       <button onClick={handleLogout}>Wyloguj</button>
     </div>

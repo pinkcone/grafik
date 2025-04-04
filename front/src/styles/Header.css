@@ -1,0 +1,18 @@
+.header-div{
+    display: flex;
+    flex-direction: row;
+    padding: 15px 0;
+    width: 100%;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid black;
+}
+.header-div button{
+    padding: 10px 20px;
+    border-radius: 10px;
+    background-color: black;
+    color: white;   
+    font-size: 15px; 
+    cursor: pointer;
+
+}

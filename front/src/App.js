@@ -25,13 +25,13 @@ function App() {
             <Route path="/cities/:cityId" element={<CityDetailPage />} />
             <Route path="/labels" element={<LabelsPage />} />
             {/* Wszystkie nieznane ścieżki przekierowujemy do strony głównej */}
-            <Route path="*" element={<HomePage />} />
+            <Route path="*" element={<LoginPage />} />
           </>
         ) : (
           <>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
-            {/* Jeśli użytkownik nie jest zalogowany, każda inna ścieżka przekierowuje do logowania */}
+            <Route path="*" element={<LoginPage />} />
             
           </>
         )}
