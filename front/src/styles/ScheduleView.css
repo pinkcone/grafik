@@ -1,0 +1,31 @@
+.schedule-container {
+    /* poziome przewijanie, ukryj pionowe */
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  
+  .schedule-table {
+    border-collapse: collapse;
+    width: max-content; /* aby tabela rosła poza kontener */
+    min-width: 100%;    /* ale co najmniej na szerokość kontenera */
+  }
+  
+  .schedule-table th,
+  .schedule-table td {
+    padding: 5px;
+    white-space: nowrap; /* zapobiega łamaniu wierszy */
+    border: 2px solid #000;
+  }
+  
+  /* "Przyklej" pierwszą kolumnę */
+  .schedule-table th:first-child,
+  .schedule-table td:first-child {
+    position: sticky;
+    left: 0px;
+    background: #fff;      /* albo inny kolor tła */
+    z-index: 2;            /* ponad pozostałymi komórkami */
+  }
+  .schedule-table thead th:first-child {
+    z-index: 3;
+  }
+  

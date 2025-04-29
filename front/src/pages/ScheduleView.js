@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useReactToPrint } from 'react-to-print';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
-
+import '../styles/ScheduleView.css';
 const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
 
 function ScheduleView({ cityId }) {
@@ -457,7 +457,7 @@ const getAvailableOptionsForEmployeeCell = (employeeId, day) => {
           onChange={(e) => setYear(parseInt(e.target.value))}
           style={{ width: '80px' }}
         />
-        <button onClick={fetchSchedule}>Pobierz grafik</button>
+        
       </div>
 
       {/* Przełączanie widoków */}
@@ -468,8 +468,15 @@ const getAvailableOptionsForEmployeeCell = (employeeId, day) => {
 
       {/* Widok wg pracowników */}
       {viewType === 'employees' && (
-        <div ref={employeesTableRef /* <-- ref do drukowania */}>
-          <table border="1" cellPadding="5">
+        <div
+        ref={employeesTableRef}
+        style={{
+          overflowX: 'auto',
+          maxWidth: '100%',
+        }}
+        className="schedule-container"
+      >
+          <table className="schedule-table">
             <thead>
               <tr>
                 <th>Pracownik</th>
