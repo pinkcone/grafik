@@ -1,31 +1,80 @@
+.schedule-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
+}
+
+.schedule-table th,
+.schedule-table td {
+  padding: 5px;
+  white-space: nowrap;
+  border: 1px solid #000;
+  background: #fff;
+}
+
+.schedule-table th:first-child,
+.schedule-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+}
+
+.schedule-table th:last-child,
+.schedule-table td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 3;
+}
+
+.schedule-table th:nth-last-child(2),
+.schedule-table td:nth-last-child(2) {
+  position: sticky;
+  right: 125px;
+  z-index: 2;
+}
+
+.schedule-table th:nth-last-child(2),
+.schedule-table td:nth-last-child(2) {
+  border-right: none;
+}
+.schedule-table th:nth-last-child(2)::after,
+.schedule-table td:nth-last-child(2)::after {
+  content: "";
+  position: absolute;
+  top: 0; right: -2px;
+  width: 2px; height: 100%;
+  background: #000;
+}
+
+.schedule-table th:last-child,
+.schedule-table td:last-child {
+  border-right: none;
+}
+.schedule-table th:last-child::after,
+.schedule-table td:last-child::after {
+  content: "";
+  position: absolute;
+  top: 0; right: -2px;
+  width: 2px; height: 100%;
+  background: #000;
+  z-index: 4;
+}
+
+.schedule-table th:first-child,
+.schedule-table td:first-child {
+  border-left: none;
+}
+.schedule-table th:first-child::before,
+.schedule-table td:first-child::before {
+  content: "";
+  position: absolute;
+  top: 0; left: -2px;
+  width: 2px; height: 100%;
+  background: #000;
+}
+
 .schedule-container {
-    /* poziome przewijanie, ukryj pionowe */
-    overflow-x: auto;
-    overflow-y: hidden;
-  }
-  
-  .schedule-table {
-    border-collapse: collapse;
-    width: max-content; /* aby tabela rosła poza kontener */
-    min-width: 100%;    /* ale co najmniej na szerokość kontenera */
-  }
-  
-  .schedule-table th,
-  .schedule-table td {
-    padding: 5px;
-    white-space: nowrap; /* zapobiega łamaniu wierszy */
-    border: 2px solid #000;
-  }
-  
-  /* "Przyklej" pierwszą kolumnę */
-  .schedule-table th:first-child,
-  .schedule-table td:first-child {
-    position: sticky;
-    left: 0px;
-    background: #fff;      /* albo inny kolor tła */
-    z-index: 2;            /* ponad pozostałymi komórkami */
-  }
-  .schedule-table thead th:first-child {
-    z-index: 3;
-  }
-  
+  overflow-x: auto;
+  overflow-y: hidden;
+}
