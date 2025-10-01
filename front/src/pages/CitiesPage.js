@@ -1,19 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import Popup from '../components/Popup';
 import "../styles/CityPage.css";
 
-
 function CitiesPage() {
   const [cities, setCities] = useState([]);
-  const [sortColumn, setSortColumn] = useState('id');
   const [sortOrder, setSortOrder] = useState('asc');
 
-  // Stany dla popupu (modal) – do dodawania/edycji
-  const [isPopupOpen, setIsPopupOpen] = useState(false);
-  const [popupMode, setPopupMode] = useState('add'); // 'add' lub 'edit'
+  // Popup: formularz dodawania/edycji
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [formMode, setFormMode] = useState('add'); // 'add' | 'edit'
   const [currentCity, setCurrentCity] = useState(null);
   const [cityName, setCityName] = useState('');
+
+  // Popup: akcje dla wybranego miasta
+  const [isActionsOpen, setIsActionsOpen] = useState(false);
+
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchCities();
@@ -23,39 +26,43 @@ function CitiesPage() {
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`/api/cities`, {
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       });
+      if (!res.ok) {
+        console.error('Błąd pobierania miast:', res.status);
+        return;
+      }
       const data = await res.json();
-      setCities(data);
+      setCities(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching cities:', error);
     }
   };
 
-  const sortData = (column) => {
-    let order = 'asc';
-    if (sortColumn === column && sortOrder === 'asc') order = 'desc';
-    setSortColumn(column);
-    setSortOrder(order);
-    const sorted = [...cities].sort((a, b) => {
-      if (a[column] < b[column]) return order === 'asc' ? -1 : 1;
-      if (a[column] > b[column]) return order === 'asc' ? 1 : -1;
-      return 0;
-    });
-    setCities(sorted);
+  const sortByName = () => {
+    const next = sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortOrder(next);
+    setCities(prev =>
+      [...prev].sort((a, b) =>
+        next === 'asc'
+          ? String(a.name).localeCompare(String(b.name))
+          : String(b.name).localeCompare(String(a.name))
+      )
+    );
   };
 
-  const handleAddCityClick = () => {
-    setPopupMode('add');
+  const openAddForm = () => {
+    setFormMode('add');
     setCityName('');
-    setIsPopupOpen(true);
+    setCurrentCity(null);
+    setIsFormOpen(true);
   };
 
-  const handleEditCityClick = (city) => {
-    setPopupMode('edit');
+  const openEditForm = (city) => {
+    setFormMode('edit');
     setCurrentCity(city);
-    setCityName(city.name);
-    setIsPopupOpen(true);
+    setCityName(city?.name || '');
+    setIsFormOpen(true);
   };
 
   const handleDeleteCity = async (cityId) => {
@@ -64,10 +71,11 @@ function CitiesPage() {
       const token = localStorage.getItem('token');
       const res = await fetch(`/api/cities/${cityId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       });
       if (res.ok) {
-        fetchCities();
+        setIsActionsOpen(false);
+        await fetchCities();
       } else {
         alert('Błąd przy usuwaniu miasta');
       }
@@ -76,94 +84,104 @@ function CitiesPage() {
     }
   };
 
-  const handlePopupSubmit = async (e) => {
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
     const token = localStorage.getItem('token');
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    };
 
-    if (popupMode === 'add') {
-      // Dodawanie miasta
-      try {
-        const res = await fetch(`/api/cities`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({ name: cityName }),
-        });
-        if (res.ok) {
-          fetchCities();
-          setIsPopupOpen(false);
-        } else {
-          alert('Błąd przy dodawaniu miasta');
-        }
-      } catch (error) {
-        console.error(error);
+    try {
+      const url = formMode === 'add'
+        ? `/api/cities`
+        : `/api/cities/${currentCity.id}`;
+      const method = formMode === 'add' ? 'POST' : 'PUT';
+
+      const res = await fetch(url, {
+        method,
+        headers,
+        body: JSON.stringify({ name: cityName }),
+      });
+
+      if (!res.ok) {
+        alert(`Błąd przy ${formMode === 'add' ? 'dodawaniu' : 'edycji'} miasta`);
+        return;
       }
-    } else if (popupMode === 'edit' && currentCity) {
-      // Edycja miasta
-      try {
-        const res = await fetch(`/api/cities/${currentCity.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({ name: cityName }),
-        });
-        if (res.ok) {
-          fetchCities();
-          setIsPopupOpen(false);
-        } else {
-          alert('Błąd przy edycji miasta');
-        }
-      } catch (error) {
-        console.error(error);
-      }
+
+      await fetchCities();
+      setIsFormOpen(false);
+    } catch (error) {
+      console.error(error);
     }
   };
 
-  return (
-    <div className='main'>
-      <h2>Moje Miasta</h2>
-      <button onClick={handleAddCityClick}>Dodaj miasto</button>
-      <table border="1">
-        <thead>
-          <tr>
-            <th onClick={() => sortData('id')}>ID</th>
-            <th onClick={() => sortData('name')}>Nazwa</th>
-            <th>Akcje</th>
-          </tr>
-        </thead>
-        <tbody>
-          {cities.map((city) => (
-            <tr key={city.id}>
-              <td>{city.id}</td>
-              <td>
-                <Link to={`/cities/${city.id}`}>{city.name}</Link>
-              </td>
-              <td>
-                <button onClick={() => handleEditCityClick(city)}>Edytuj</button>
-                <button onClick={() => handleDeleteCity(city.id)}>Usuń</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+  const handleCityClick = (city) => {
+    setCurrentCity(city);
+    setIsActionsOpen(true);
+  };
 
-      <Popup isOpen={isPopupOpen} onClose={() => setIsPopupOpen(false)}>
-        <h3>{popupMode === 'add' ? 'Dodaj miasto' : 'Edytuj miasto'}</h3>
-        <form onSubmit={handlePopupSubmit}>
+  const openCity = (cityId) => {
+    setIsActionsOpen(false);
+    navigate(`/cities/${cityId}`);
+  };
+
+  return (
+    <div className='main-cities'>
+      <h2>Moje Miasta</h2>
+
+      <div className="toolbar">
+        <button onClick={openAddForm}>Dodaj miasto</button>
+        <button onClick={sortByName}>
+          Sortuj po nazwie ({sortOrder === 'asc' ? 'A→Z' : 'Z→A'})
+        </button>
+      </div>
+
+      {/* Lista miast (bez tabeli) */}
+      <div className="city-list">
+        {cities.map((city) => (
+            <button
+              type="button"
+              className="city-name-button"
+              onClick={() => handleCityClick(city)}
+              title="Pokaż akcje"
+            >
+              {city.name}
+            </button>
+        ))}
+      </div>
+
+      {/* POPUP: Akcje dla miasta */}
+      <Popup isOpen={isActionsOpen} onClose={() => setIsActionsOpen(false)}>
+        <h3>Miasto: {currentCity?.name}</h3>
+        <div className="actions">
+          <button onClick={() => openCity(currentCity.id)}>Otwórz</button>
+          <button onClick={() => { setIsActionsOpen(false); openEditForm(currentCity); }}>
+            Edytuj
+          </button>
+          <button onClick={() => handleDeleteCity(currentCity.id)}>
+            Usuń
+          </button>
+        </div>
+      </Popup>
+
+      {/* POPUP: Formularz dodawania/edycji */}
+      <Popup isOpen={isFormOpen} onClose={() => setIsFormOpen(false)}>
+        <h3>{formMode === 'add' ? 'Dodaj miasto' : 'Edytuj miasto'}</h3>
+        <form onSubmit={handleFormSubmit}>
           <div>
-            <label>Nazwa miasta:</label>
+            <label htmlFor="cityName">Nazwa miasta:&nbsp;</label>
             <input
+              id="cityName"
               type="text"
               value={cityName}
               onChange={(e) => setCityName(e.target.value)}
               required
             />
           </div>
-          <button type="submit">{popupMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}</button>
+          <button type="submit">
+            {formMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}
+          </button>
         </form>
       </Popup>
     </div>

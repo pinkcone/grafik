@@ -1,0 +1,38 @@
+.main-cities {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background-color: #769194;
+    padding: 20px;
+    border-radius: 10px;
+}
+
+.main-cities .toolbar{
+    gap: 10px;
+    display: flex;
+    padding: 10px;
+}
+
+.main-cities .toolbar button, .main-cities .city-list button{
+    background-color: #e0f0f0;
+    color: black;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.main-cities .city-list{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.main-cities .city-list button{
+    padding: 10px 18px;
+    font-size: 15px;
+    font-weight: 600;
+    
+}

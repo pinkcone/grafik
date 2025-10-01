@@ -10,6 +10,7 @@ body{
     flex-direction: column;
     justify-content: center;
     align-items: center;
+    padding: 20px;
 }
 .main input{
     width: 300px;

@@ -1,4 +1,3 @@
-// src/pages/LabelsPage.js
 import React, { useState, useEffect } from 'react';
 import Popup from '../components/Popup';
 
@@ -108,7 +107,7 @@ function LabelsPage() {
 
   return (
     <div>
-      <h2>Moje Lebale</h2>
+      <h2>Etykiety</h2>
       <button onClick={openModalForAdd}>Dodaj etykietę</button>
       <table border="1" cellPadding="5">
         <thead>

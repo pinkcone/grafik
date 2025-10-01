@@ -3,6 +3,7 @@ import { useReactToPrint } from 'react-to-print';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import '../styles/ScheduleView.css';
+
 const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
 
 const quaters = [[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]];
@@ -32,7 +33,9 @@ function ScheduleView({ cityId }) {
     content: () => routesTableRef.current,
     documentTitle: 'Grafik - Widok Tras'
   });
+
   const [quarterSchedules, setQuarterSchedules] = useState({});
+
   const fetchQuarterSchedules = async () => {
     const qMonths = getQuarterMonths(month);
     const results = await Promise.all(qMonths.map(async (m) => {
@@ -63,8 +66,8 @@ function ScheduleView({ cityId }) {
     fetchLabels();
     fetchSchedule();
     fetchQuarterSchedules();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityId, month, year]);
-
 
   const fetchEmployees = async () => {
     try {
@@ -128,7 +131,6 @@ function ScheduleView({ cityId }) {
         }
       );
       const data = await res.json();
-      console.log("Fetched schedule:", data);
       setSchedules(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Error fetching schedule:", error);
@@ -137,40 +139,98 @@ function ScheduleView({ cityId }) {
 
   const daysInMonth = (m, y) => new Date(y, m, 0).getDate();
   const days = [];
-  for (let d = 1; d <= daysInMonth(month, year); d++) {
-    days.push(d);
-  }
+  for (let d = 1; d <= daysInMonth(month, year); d++) days.push(d);
 
+  /** ================= EMPLOYEE VIEW: CREATE/UPDATE ================= */
+
+  // Dodanie pierwszego wpisu w danym dniu (gdy brak wpisów) — jeżeli wybrano TRASĘ, przypisz też trasę powiązaną
   const updateScheduleCell = async (employeeId, date, newValue) => {
     let route_id = null, label = null;
-    if (newValue.startsWith("R:")) {
-      route_id = newValue.substring(2);
-    } else if (newValue.startsWith("L:")) {
-      label = newValue.substring(2);
-    }
-    console.log("Updating schedule (employee view):", { employeeId, date, route_id, label });
+    if (newValue.startsWith("R:")) route_id = Number(newValue.substring(2));
+    else if (newValue.startsWith("L:")) label = newValue.substring(2);
+
     try {
-      const res = await fetch(`/api/schedule/update-cell`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        cache: 'no-store',
-        body: JSON.stringify({ date, employee_id: employeeId, route_id, label })
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        console.error("Error updating schedule (employee view):", data);
-        alert(data.message || "Błąd aktualizacji grafiku");
+      if (route_id) {
+        // auto-para: ta trasa + powiązana
+        const pairIds = getPairRouteIdsIncludingSelf(route_id);
+        await Promise.all(
+          pairIds.map(rid =>
+            putScheduleCell({ date, route_id: Number(rid), employee_id: employeeId })
+          )
+        );
+      } else {
+        // etykieta lub pusto – klasyczny pojedynczy update
+        const res = await fetch(`/api/schedule/update-cell`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          cache: 'no-store',
+          body: JSON.stringify({ date, employee_id: employeeId, route_id: null, label })
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.message || `HTTP ${res.status}`);
+        }
       }
+
       await fetchSchedule();
       await fetchQuarterSchedules();
     } catch (error) {
       console.error("Update schedule error (employee view):", error);
-      alert("Błąd aktualizacji grafiku (exception)");
+      alert(`Błąd aktualizacji grafiku: ${error.message}`);
     }
   };
+
+  // Edycja KONKRETNEGO wpisu (gdy w komórce jest wiele wpisów) — jeżeli wybrano TRASĘ, przypisz też trasę powiązaną
+  const updateExistingEntryInEmployeeCell = async (entry, date, newValue) => {
+    let route_id = null, label = null;
+    if (newValue.startsWith("R:")) route_id = Number(newValue.substring(2));
+    else if (newValue.startsWith("L:")) label = newValue.substring(2);
+
+    try {
+      if (route_id) {
+        // auto-para: przypisz pracownika do obu tras w parze
+        const pairIds = getPairRouteIdsIncludingSelf(route_id);
+        await Promise.all(
+          pairIds.map(rid =>
+            putScheduleCell({ date, route_id: Number(rid), employee_id: entry.employee_id })
+          )
+        );
+      } else {
+        // zmiana na etykietę/pusto dla tego konkretnego wpisu
+        const res = await fetch(`/api/schedule/update-cell`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          cache: 'no-store',
+          body: JSON.stringify({
+            date,
+            employee_id: entry.employee_id,
+            route_id: null,
+            label: label ?? null,
+            schedule_id: entry.id ?? null,
+            prev_route_id: entry.route_id ?? null
+          })
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.message || `HTTP ${res.status}`);
+        }
+      }
+
+      await fetchSchedule();
+      await fetchQuarterSchedules();
+    } catch (error) {
+      console.error("Update specific entry error:", error);
+      alert(`Błąd aktualizacji wpisu: ${error.message}`);
+    }
+  };
+
+  /** ================= OPTIONS (EMPLOYEE VIEW) ================= */
 
   const getAvailableOptionsForEmployeeCell = (employeeId, day) => {
     const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -193,37 +253,95 @@ function ScheduleView({ cityId }) {
     return [{ value: "", label: "-- brak --" }, ...routeOptions, ...labelOptions];
   };
 
-  const updateScheduleForRouteCell = async (routeId, day, employeeId) => {
-    const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    console.log("Updating schedule (route view):", { date, routeId, employeeId });
-    try {
-      const res = await fetch(`/api/schedule/update-cell`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        cache: 'no-store',
-        body: JSON.stringify({ date, employee_id: employeeId, route_id: routeId, label: null })
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        console.error("Error updating schedule (route view):", data);
-        alert(data.message || "Błąd aktualizacji grafiku");
+  /*** === POWIĄZANE TRASY (linked_route_id) === ***/
+
+  // Zwróć ID tras z tej samej pary co routeId (dwukierunkowo) – łącznie z samą trasą
+  const getPairRouteIdsIncludingSelf = (routeId) => {
+    const idStr = routeId.toString();
+    const rt = routes.find(r => r.id.toString() === idStr);
+    if (!rt) return [idStr];
+
+    const pair = new Set([idStr]);
+
+    // A: jeśli ta trasa wskazuje na inną
+    if (rt.linked_route_id != null) {
+      pair.add(rt.linked_route_id.toString());
+    }
+    // B: jeżeli inna trasa wskazuje na tę
+    routes.forEach(r => {
+      if (r.linked_route_id != null && r.linked_route_id.toString() === idStr) {
+        pair.add(r.id.toString());
       }
+    });
+
+    return Array.from(pair);
+  };
+
+  const getPairRoute = (routeId) => {
+    const idStr = routeId.toString();
+    const rt = routes.find(r => r.id.toString() === idStr);
+    if (!rt) return [idStr];
+    if (rt.linked_route_id != null) return rt.linked_route_id;
+    return null;
+  };
+
+  // PUT pojedynczej (route+date) – backend tworzy/aktualizuje po {date, route_id}
+  const putScheduleCell = async ({ date, route_id, employee_id }) => {
+    const res = await fetch(`/api/schedule/update-cell`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      cache: 'no-store',
+      body: JSON.stringify({
+        date,
+        employee_id: employee_id || null,
+        route_id,
+        label: null
+      })
+    });
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const data = await res.json();
+        msg = data.message || msg;
+      } catch { }
+      throw new Error(msg);
+    }
+  };
+
+  // Widok tras – bez zmian
+  const updateScheduleForRouteCell = async (routeId, day, employeeIdRaw) => {
+    const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const employeeId = employeeIdRaw ? Number(employeeIdRaw) : null;
+
+    try {
+      const pairIds = getPairRouteIdsIncludingSelf(routeId);
+      const pairId = getPairRoute(routeId);
+      await Promise.all(
+        pairIds.map(rid =>
+          putScheduleCell({ date, route_id: Number(rid), employee_id: employeeId, linked_route_id: pairId })
+        )
+      );
       await fetchSchedule();
       await fetchQuarterSchedules();
     } catch (error) {
-      console.error("Update schedule error (route view):", error);
-      alert("Błąd aktualizacji grafiku (exception)");
+      console.error("Update schedule error (route pair):", error);
+      alert(`Błąd aktualizacji grafiku: ${error.message}`);
     }
   };
+
+  /** ================= AGGREGATIONS ================= */
 
   const getSchedulesForMonth = (m) => {
     if (m === month) return schedules;
     return quarterSchedules[m] || [];
   };
 
+  const daysInM = (m, y) => new Date(y, m, 0).getDate();
+
+  // Licz WSZYSTKIE wpisy (nie tylko pierwszy)
   const calculateEmployeeHoursForMonth = (employeeId, m) => {
     const dim = daysInM(m, year);
     let total = 0;
@@ -235,20 +353,48 @@ function ScheduleView({ cityId }) {
 
     for (let d = 1; d <= dim; d++) {
       const date = `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const cell = monthSchedules.find(s => s.employee_id === employeeId && s.date === date);
-      if (!cell) continue;
+      const cells = monthSchedules.filter(s => s.employee_id === employeeId && s.date === date);
 
-      if (cell.route_id) {
-        const route = routes.find(r => r.id.toString() === cell.route_id.toString());
-        if (route) total += calculateDuration(route);
-      } else if (cell.label) {
-        const labelObj = labels.find(l => l.code === cell.label);
-        if (labelObj && typeof labelObj.default_hours === 'number') {
-          total += (labelObj.default_hours * partTime);
+      for (const cell of cells) {
+        if (cell.route_id) {
+          const route = routes.find(r => r.id.toString() === cell.route_id.toString());
+          if (route) total += calculateDuration(route);
+        } else if (cell.label) {
+          const labelObj = labels.find(l => l.code === cell.label);
+          if (labelObj && typeof labelObj.default_hours === 'number') {
+            total += (labelObj.default_hours * partTime);
+          }
         }
       }
     }
     return total;
+  };
+
+  const calculateEmployeeHours = (employeeId) => {
+    const dim = daysInM(month, year);
+    let total = 0;
+
+    const employee = employees.find(e => e.id === employeeId);
+    const partTime = employee ? (employee.part_time ?? 1.0) : 1.0;
+
+    for (let d = 1; d <= dim; d++) {
+      const date = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const cells = schedules.filter(s => s.employee_id === employeeId && s.date === date);
+
+      for (const cell of cells) {
+        if (cell.route_id) {
+          const route = routes.find(r => r.id.toString() === cell.route_id.toString());
+          if (route) total += calculateDuration(route);
+        } else if (cell.label) {
+          const labelObj = labels.find(l => l.code === cell.label);
+          if (labelObj && typeof labelObj.default_hours === 'number') {
+            total += (labelObj.default_hours * partTime);
+          }
+        }
+      }
+    }
+
+    return total.toFixed(2);
   };
 
   const calculateQuarterEmployeeHours = (employeeId) => {
@@ -256,52 +402,7 @@ function ScheduleView({ cityId }) {
     return qMonths.reduce((sum, m) => sum + calculateEmployeeHoursForMonth(employeeId, m), 0);
   };
 
-  const getAvailableEmployeesForRouteCell = (routeId, day) => {
-    const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const assignedEmployeeIds = schedules
-      .filter(s => s.date === date && s.route_id)
-      .map(s => s.employee_id.toString());
-    const availableEmployees = employees.filter(emp => {
-      const empId = emp.id.toString();
-
-      return (!assignedEmployeeIds.includes(empId)) ||
-        (schedules.find(s => s.date === date && s.route_id?.toString() === routeId.toString() && s.employee_id.toString() === empId));
-    });
-    return [{ value: "", label: "-- brak --" }, ...availableEmployees.map(emp => ({
-      value: emp.id,
-      label: `${emp.first_name} ${emp.last_name}`
-    }))];
-  };
-
-  const daysInM = (m, y) => new Date(y, m, 0).getDate();
-  const calculateEmployeeHours = (employeeId) => {
-    const dim = daysInM(month, year);
-    let total = 0;
-
-    const employee = employees.find(e => e.id === employeeId);
-    const partTime = employee ? employee.part_time : 1.0;
-
-    for (let d = 1; d <= dim; d++) {
-      const date = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const cell = schedules.find(s => s.employee_id === employeeId && s.date === date);
-
-      if (!cell) continue;
-      if (cell.route_id) {
-        const route = routes.find(r => r.id.toString() === cell.route_id.toString());
-        if (route) {
-          total += calculateDuration(route);
-        }
-      }
-      else if (cell.label) {
-        const labelObj = labels.find(l => l.code === cell.label);
-        if (labelObj) {
-          total += (labelObj.default_hours * partTime);
-        }
-      }
-    }
-
-    return total.toFixed(2);
-  };
+  /** ================= UTIL ================= */
 
   const calculateDuration = (route) => {
     let wh = route.working_hours;
@@ -320,9 +421,7 @@ function ScheduleView({ cityId }) {
         const [endH, endM] = seg.end.split(':').map(Number);
         const startMinutes = startH * 60 + startM;
         let endMinutes = endH * 60 + endM;
-        if (endMinutes < startMinutes) {
-          endMinutes += 24 * 60;
-        }
+        if (endMinutes < startMinutes) endMinutes += 24 * 60;
         totalMinutes += endMinutes - startMinutes;
       });
       return totalMinutes / 60;
@@ -353,34 +452,29 @@ function ScheduleView({ cityId }) {
       const row = [`${emp.last_name} ${emp.first_name}`];
       days.forEach(day => {
         const date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        const cell = schedules.find(s => s.employee_id === emp.id && s.date === date);
-        let cellValue = "";
-        if (cell) {
+        const cells = schedules.filter(s => s.employee_id === emp.id && s.date === date);
+        const parts = [];
+        for (const cell of cells) {
           if (cell.route_id) {
             const route = routes.find(r => r.id.toString() === cell.route_id.toString());
             if (route) {
               let wh = route.working_hours;
               if (typeof wh === "string") {
-                try {
-                  wh = JSON.parse(wh);
-                } catch (e) {
-                  console.error("Error parsing working_hours:", e);
-                  wh = null;
-                }
+                try { wh = JSON.parse(wh); } catch { wh = null; }
               }
               if (wh && Array.isArray(wh.segments) && wh.segments.length > 0) {
-                cellValue = wh.segments
-                  .map(seg => `${seg.start}-${seg.end}`)
-                  .join("\n");
+                parts.push(wh.segments.map(seg => `${seg.start}-${seg.end}`).join(" / "));
+              } else {
+                parts.push(`RouteID=${cell.route_id}`);
               }
             } else {
-              cellValue = `RouteID=${cell.route_id}`;
+              parts.push(`RouteID=${cell.route_id}`);
             }
           } else if (cell.label) {
-            cellValue = `${cell.label}`;
+            parts.push(`${cell.label}`);
           }
         }
-        row.push(cellValue);
+        row.push(parts.join("\n"));
       });
       row.push(calculateEmployeeHours(emp.id));
       sheetData.push(row);
@@ -401,11 +495,7 @@ function ScheduleView({ cityId }) {
         let cellValue = "";
         if (cell && cell.employee_id) {
           const emp = employees.find(e => e.id === cell.employee_id);
-          if (emp) {
-            cellValue = `${emp.last_name} ${emp.first_name}`;
-          } else {
-            cellValue = `EmpID=${cell.employee_id}`;
-          }
+          cellValue = emp ? `${emp.last_name} ${emp.first_name}` : `EmpID=${cell.employee_id}`;
         }
         row.push(cellValue);
       });
@@ -413,6 +503,66 @@ function ScheduleView({ cityId }) {
     });
 
     return sheetData;
+  };
+// Opcje pracowników dla komórki w widoku TRAS.
+// Pozwala wybrać pracownika nawet jeśli jest już przypisany do TRASY z pary.
+// Blokuje pracowników przypisanych tego dnia do innych (niezwiązanych) tras.
+const getAvailableEmployeesForRouteCell = (routeId, day) => {
+  const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+  // Zbierz ID tras z pary (ta + powiązana)
+  const pairIds = new Set(getPairRouteIdsIncludingSelf(routeId).map(String));
+
+  // Mapa: route_id -> set(employee_id) tego dnia
+  const assignedByRoute = schedules
+    .filter(s => s.date === date && s.route_id)
+    .reduce((map, s) => {
+      const rid = s.route_id.toString();
+      if (!map.has(rid)) map.set(rid, new Set());
+      map.get(rid).add(s.employee_id.toString());
+      return map;
+    }, new Map());
+
+  // Zbiór wszystkich pracowników przypisanych do jakiejkolwiek trasy tego dnia
+  const assignedAnywhere = new Set(
+    schedules
+      .filter(s => s.date === date && s.route_id)
+      .map(s => s.employee_id.toString())
+  );
+
+  return [
+    { value: "", label: "-- brak --" },
+    ...employees
+      .filter(emp => {
+        const empId = emp.id.toString();
+
+        // Jeśli pracownik jest już na którejś trasie z pary → dopuść (żeby móc edytować)
+        for (const rid of pairIds) {
+          if (assignedByRoute.get(rid)?.has(empId)) return true;
+        }
+
+        // W przeciwnym razie – dopuść tylko, jeśli NIE jest przypisany nigdzie indziej tego dnia
+        return !assignedAnywhere.has(empId);
+      })
+      .map(emp => ({
+        value: emp.id,
+        label: `${emp.first_name} ${emp.last_name}`
+      }))
+  ];
+};
+
+  /*** === NOWE helpery dla widoku pracowników (multi-wpisy) === ***/
+  const getCellSchedulesAll = (employeeId, date) =>
+    schedules.filter(s => s.employee_id === employeeId && s.date === date);
+
+  const buildDisplayOptionForEntry = (entry) => {
+    if (entry.route_id) {
+      const r = routes.find(rr => rr.id.toString() === entry.route_id.toString());
+      if (r) return { value: `R:${r.id}`, label: `${r.name} (${calculateDuration(r).toFixed(2)}h)` };
+      return { value: `R:${entry.route_id}`, label: `Trasa ID=${entry.route_id}` };
+    }
+    if (entry.label) return { value: `L:${entry.label}`, label: `${entry.label}` };
+    return { value: "", label: "-- brak --" };
   };
 
   return (
@@ -431,7 +581,7 @@ function ScheduleView({ cityId }) {
 
       <div style={{ marginBottom: '10px' }}>
         <label>Miesiąc: </label>
-        <select value={month} onChange={(e) => setMonth(parseInt(e.target.value))}>
+        <select value={month} onChange={(e) => setMonth(parseInt(e.target.value, 10))}>
           {[...Array(12).keys()].map(i => (
             <option key={i + 1} value={i + 1}>{i + 1}</option>
           ))}
@@ -440,10 +590,9 @@ function ScheduleView({ cityId }) {
         <input
           type="number"
           value={year}
-          onChange={(e) => setYear(parseInt(e.target.value))}
+          onChange={(e) => setYear(parseInt(e.target.value, 10))}
           style={{ width: '80px' }}
         />
-
       </div>
 
       <div style={{ marginBottom: '10px' }}>
@@ -454,10 +603,7 @@ function ScheduleView({ cityId }) {
       {viewType === 'employees' && (
         <div
           ref={employeesTableRef}
-          style={{
-            overflowX: 'auto',
-            maxWidth: '100%',
-          }}
+          style={{ overflowX: 'auto', maxWidth: '100%' }}
           className="schedule-container"
         >
           <table className="schedule-table">
@@ -482,23 +628,50 @@ function ScheduleView({ cityId }) {
                   <td>{emp.last_name} {emp.first_name}</td>
                   {days.map(day => {
                     const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                    const cell = schedules.find(s => s.employee_id === emp.id && s.date === date);
-                    let currentValue = "";
-                    if (cell) {
-                      if (cell.route_id) currentValue = "R:" + cell.route_id;
-                      else if (cell.label) currentValue = "L:" + cell.label;
+
+                    const entries = getCellSchedulesAll(emp.id, date);
+
+                    if (entries.length === 0) {
+                      // brak wpisów -> edytowalny select do dodania pierwszego wpisu (z auto-parą dla trasy)
+                      const options = getAvailableOptionsForEmployeeCell(emp.id, day);
+                      return (
+                        <td key={day}>
+                          <select
+                            value=""
+                            onChange={(e) => updateScheduleCell(emp.id, date, e.target.value)}
+                          >
+                            {options.map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </td>
+                      );
                     }
-                    const options = getAvailableOptionsForEmployeeCell(emp.id, day);
+
+                    // są wpisy -> pokaż każdy jako EDYTOWALNY select; jeśli wybór to trasa, zadziała auto-para
                     return (
                       <td key={day}>
-                        <select
-                          value={currentValue}
-                          onChange={(e) => updateScheduleCell(emp.id, date, e.target.value)}
-                        >
-                          {options.map(opt => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
-                        </select>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {entries.map((entry) => {
+                            const opt = buildDisplayOptionForEntry(entry);
+                            const options = getAvailableOptionsForEmployeeCell(emp.id, day);
+                            return (
+                              <select
+                                key={entry.id || `${opt.value}-${date}`}
+                                value={opt.value}
+                                onChange={(e) => updateExistingEntryInEmployeeCell(entry, date, e.target.value)}
+                              >
+                                {/* zawsze pokaż aktualną opcję, nawet jeśli nie ma jej w availableOptions */}
+                                <option value={opt.value}>{opt.label}</option>
+                                {options
+                                  .filter(o => o.value !== opt.value) // bez duplikatu aktualnej
+                                  .map(o => (
+                                    <option key={o.value} value={o.value}>{o.label}</option>
+                                  ))}
+                              </select>
+                            );
+                          })}
+                        </div>
                       </td>
                     );
                   })}
@@ -507,14 +680,13 @@ function ScheduleView({ cityId }) {
                 </tr>
               ))}
             </tbody>
-
           </table>
         </div>
       )}
 
       {viewType === 'routes' && (
-        <div ref={routesTableRef}>
-          <table border="1" cellPadding="5">
+        <div className="schedule-routes-container" style={{ overflowX: 'auto', maxWidth: '100%' }} ref={routesTableRef}>
+          <table className="schedule-routes" border="1" cellPadding="5">
             <thead>
               <tr>
                 <th>Trasa</th>
@@ -530,9 +702,19 @@ function ScheduleView({ cityId }) {
             </thead>
             <tbody>
               {routes.map(rt => {
+                const isPaired =
+                  rt.linked_route_id != null ||
+                  routes.some(r => r.linked_route_id != null && r.linked_route_id.toString() === rt.id.toString());
                 return (
                   <tr key={rt.id}>
-                    <td>{rt.name} ({calculateDuration(rt).toFixed(2)}h)</td>
+                    <td>
+                      {rt.name} ({calculateDuration(rt).toFixed(2)}h)
+                      {isPaired && (
+                        <span style={{ marginLeft: 6, opacity: 0.7 }} title="Trasa powiązana (para)">
+                          (para)
+                        </span>
+                      )}
+                    </td>
                     {days.map(day => {
                       const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                       const cell = schedules.find(s => s.date === date && s.route_id?.toString() === rt.id.toString());

@@ -1,4 +1,5 @@
-.schedule-table {
+.schedule-table,
+.schedule-routes {
   border-collapse: separate;
   border-spacing: 0;
   width: max-content;
@@ -6,7 +7,9 @@
 }
 
 .schedule-table th,
-.schedule-table td {
+.schedule-table td,
+.schedule-routes th,
+.schedule-routes td{
   padding: 5px;
   white-space: nowrap;
   border: 1px solid #000;
@@ -14,7 +17,9 @@
 }
 
 .schedule-table th:first-child,
-.schedule-table td:first-child {
+.schedule-table td:first-child,
+.schedule-routes th:first-child,
+.schedule-routes td:first-child {
   position: sticky;
   left: 0;
   z-index: 3;
@@ -62,11 +67,15 @@
 }
 
 .schedule-table th:first-child,
-.schedule-table td:first-child {
+.schedule-table td:first-child,
+.schedule-routes th:first-child,
+.schedule-routes td:first-child {
   border-left: none;
 }
 .schedule-table th:first-child::before,
-.schedule-table td:first-child::before {
+.schedule-table td:first-child::before,
+.schedule-routes th:first-child::before,
+.schedule-routes td:first-child::before {
   content: "";
   position: absolute;
   top: 0; left: -2px;
@@ -74,7 +83,9 @@
   background: #000;
 }
 
-.schedule-container {
+.schedule-container,
+.schedule-routes-container
+ {
   overflow-x: auto;
   overflow-y: hidden;
 }
