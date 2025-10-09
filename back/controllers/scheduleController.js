@@ -39,7 +39,34 @@ exports.updateScheduleCell = async (req, res) => {
   }
 };
 
-  
+exports.deleteScheduleById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(id);
+    // Prosta walidacja id
+    if (!/^\d+$/.test(id)) {
+      return res.status(400).json({ error: 'Nieprawidłowe id.' });
+    }
+
+    // Jeśli chcesz ograniczyć usuwanie do autora wpisu, użyj wariantu poniżej:
+    // const userId = req.user?.id; // np. z middleware autoryzacji
+    // const deleted = await Schedule.destroy({ where: { id: Number(id), user_id: userId } });
+
+    const deleted = await Schedule.destroy({
+      where: { id: Number(id) },
+    });
+
+    if (deleted === 0) {
+      return res.status(404).json({ error: 'Harmonogram o podanym id nie istnieje.' });
+    }
+
+    // Brak treści w odpowiedzi przy udanym usunięciu
+    return res.status(204).send();
+  } catch (err) {
+    console.error('Błąd przy usuwaniu harmonogramu:', err);
+    return res.status(500).json({ error: 'Wystąpił błąd serwera.' });
+  }
+};
 /**
  * GET /api/schedule/city/:cityId?month=MM&year=YYYY
  * Pobranie harmonogramu (Schedule) dla danego miasta i wybranego miesiąca/roku.

@@ -143,7 +143,10 @@ function ScheduleView({ cityId }) {
 
   /** ================= EMPLOYEE VIEW: CREATE/UPDATE ================= */
 
-  // Dodanie pierwszego wpisu w danym dniu (gdy brak wpisów) — jeżeli wybrano TRASĘ, przypisz też trasę powiązaną
+  // Dodanie pierwszego wpisu w danym dniu (gdy brak wpisów)
+  // Jeżeli wybrano TRASĘ: dodaj także trasę bliźniaczą tylko jeśli:
+  // - nie jest przypisana do innego pracownika tego dnia,
+  // - nie masz już tej bliźniaczej trasy przypisanej do tego samego pracownika.
   const updateScheduleCell = async (employeeId, date, newValue) => {
     let route_id = null, label = null;
     if (newValue.startsWith("R:")) route_id = Number(newValue.substring(2));
@@ -151,13 +154,20 @@ function ScheduleView({ cityId }) {
 
     try {
       if (route_id) {
-        // auto-para: ta trasa + powiązana
-        const pairIds = getPairRouteIdsIncludingSelf(route_id);
-        await Promise.all(
-          pairIds.map(rid =>
-            putScheduleCell({ date, route_id: Number(rid), employee_id: employeeId })
-          )
-        );
+        // 1) najpierw wybrana trasa
+        await putScheduleCell({ date, route_id: Number(route_id), employee_id: employeeId });
+
+        // 2) ewentualnie dokładamy bliźniaczą (tylko gdy wolna od innego pracownika)
+        const pairId = getPairRoute(route_id);
+        if (pairId != null) {
+          const takenByOther = isRouteAssignedToAnotherEmployee(date, pairId, employeeId);
+          const pairSched = findScheduleForRoute(date, pairId);
+          const alreadySame = !!pairSched && pairSched.employee_id?.toString() === employeeId.toString();
+
+          if (!takenByOther && !alreadySame) {
+            await putScheduleCell({ date, route_id: Number(pairId), employee_id: employeeId });
+          }
+        }
       } else {
         // etykieta lub pusto – klasyczny pojedynczy update
         const res = await fetch(`/api/schedule/update-cell`, {
@@ -183,21 +193,37 @@ function ScheduleView({ cityId }) {
     }
   };
 
-  // Edycja KONKRETNEGO wpisu (gdy w komórce jest wiele wpisów) — jeżeli wybrano TRASĘ, przypisz też trasę powiązaną
+  // Edycja KONKRETNEGO wpisu (gdy w komórce jest wiele wpisów)
+  // Jeżeli wybrano TRASĘ: jak wyżej – dodaj bliźniaczą tylko gdy wolna od innego pracownika.
   const updateExistingEntryInEmployeeCell = async (entry, date, newValue) => {
+    // usuwanie pojedynczego wpisu
+    if (newValue.startsWith("D:")) {
+      const sure = window.confirm("Na pewno usunąć ten wpis?");
+      if (!sure) return;
+      await deleteSchedule(entry.id);
+      return;
+    }
+
     let route_id = null, label = null;
     if (newValue.startsWith("R:")) route_id = Number(newValue.substring(2));
     else if (newValue.startsWith("L:")) label = newValue.substring(2);
 
     try {
       if (route_id) {
-        // auto-para: przypisz pracownika do obu tras w parze
-        const pairIds = getPairRouteIdsIncludingSelf(route_id);
-        await Promise.all(
-          pairIds.map(rid =>
-            putScheduleCell({ date, route_id: Number(rid), employee_id: entry.employee_id })
-          )
-        );
+        // 1) wybrana trasa
+        await putScheduleCell({ date, route_id: Number(route_id), employee_id: entry.employee_id });
+
+        // 2) bliźniacza tylko jeśli wolna od innego
+        const pairId = getPairRoute(route_id);
+        if (pairId != null) {
+          const takenByOther = isRouteAssignedToAnotherEmployee(date, pairId, entry.employee_id);
+          const pairSched = findScheduleForRoute(date, pairId);
+          const alreadySame = !!pairSched && pairSched.employee_id?.toString() === entry.employee_id.toString();
+
+          if (!takenByOther && !alreadySame) {
+            await putScheduleCell({ date, route_id: Number(pairId), employee_id: entry.employee_id });
+          }
+        }
       } else {
         // zmiana na etykietę/pusto dla tego konkretnego wpisu
         const res = await fetch(`/api/schedule/update-cell`, {
@@ -277,11 +303,13 @@ function ScheduleView({ cityId }) {
     return Array.from(pair);
   };
 
+  // Zwróć ID trasy bliźniaczej (drugi element pary) – działa dwukierunkowo; brak → null
   const getPairRoute = (routeId) => {
     const idStr = routeId.toString();
     const rt = routes.find(r => r.id.toString() === idStr);
-    if (!rt) return [idStr];
-    if (rt.linked_route_id != null) return rt.linked_route_id;
+    if (rt && rt.linked_route_id != null) return Number(rt.linked_route_id);
+    const reverse = routes.find(r => r.linked_route_id != null && r.linked_route_id.toString() === idStr);
+    if (reverse) return Number(reverse.id);
     return null;
   };
 
@@ -311,19 +339,80 @@ function ScheduleView({ cityId }) {
     }
   };
 
-  // Widok tras – bez zmian
+  // === NOWE helpery do kasowania i sprawdzania zajętości ===
+
+  // Znajdź wpis dla (date, route_id)
+  const findScheduleForRoute = (date, routeId) =>
+    schedules.find(s => s.date === date && s.route_id?.toString() === routeId.toString());
+
+  // Czy trasa jest zajęta przez INNEGO pracownika (tego dnia)?
+  const isRouteAssignedToAnotherEmployee = (date, routeId, employeeId) => {
+    const s = findScheduleForRoute(date, routeId);
+    return !!(s && s.employee_id?.toString() !== (employeeId?.toString() ?? ''));
+  };
+
+  // Usuń pojedynczy wpis (bez ruszania bliźniaczej trasy)
+  const deleteSchedule = async (scheduleId) => {
+    try {
+      if (!scheduleId) return;
+
+      const res = await fetch(`/api/schedule/${scheduleId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+        cache: 'no-store'
+      });
+      if (!res.ok && res.status !== 204) {
+        let msg = `HTTP ${res.status}`;
+        try {
+          const data = await res.json();
+          msg = data.message || msg;
+        } catch { }
+        throw new Error(msg);
+      }
+
+      await fetchSchedule();
+      await fetchQuarterSchedules();
+    } catch (e) {
+      console.error('Delete schedule error:', e);
+      alert(`Nie udało się usunąć wpisu: ${e.message || e}`);
+    }
+  };
+
+  // Widok TRAS – przypisanie/odpięcie pracownika.
+  // Gdy przypisujemy pracownika do trasy, próbujemy dodać bliźniaczą TYLKO gdy
+  // nie jest zajęta przez innego. Przy odpinaniu – nie dotykamy bliźniaczej.
   const updateScheduleForRouteCell = async (routeId, day, employeeIdRaw) => {
     const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const employeeId = employeeIdRaw ? Number(employeeIdRaw) : null;
+    const employeeId = employeeIdRaw === '' ? null : (employeeIdRaw === 'DELETE' ? 'DELETE' : Number(employeeIdRaw));
 
     try {
-      const pairIds = getPairRouteIdsIncludingSelf(routeId);
-      const pairId = getPairRoute(routeId);
-      await Promise.all(
-        pairIds.map(rid =>
-          putScheduleCell({ date, route_id: Number(rid), employee_id: employeeId, linked_route_id: pairId })
-        )
-      );
+      const currentCell = findScheduleForRoute(date, routeId);
+
+      // Usunięcie istniejącego wpisu (opcja w selectcie)
+      if (employeeId === 'DELETE' && currentCell) {
+        const ok = window.confirm("Na pewno usunąć przypisanie tej trasy w tym dniu?");
+        if (!ok) return;
+        await deleteSchedule(currentCell.id);
+        return;
+      }
+
+      // Zwykłe przypisanie/odpięcie
+      await putScheduleCell({ date, route_id: Number(routeId), employee_id: employeeId });
+
+      // Jeśli przypinamy pracownika – rozważ bliźniaczą
+      if (employeeId != null) {
+        const pairId = getPairRoute(routeId);
+        if (pairId != null) {
+          const takenByOther = isRouteAssignedToAnotherEmployee(date, pairId, employeeId);
+          const pairSched = findScheduleForRoute(date, pairId);
+          const alreadySame = !!pairSched && pairSched.employee_id?.toString() === employeeId.toString();
+
+          if (!takenByOther && !alreadySame) {
+            await putScheduleCell({ date, route_id: Number(pairId), employee_id: employeeId });
+          }
+        }
+      }
+
       await fetchSchedule();
       await fetchQuarterSchedules();
     } catch (error) {
@@ -504,52 +593,53 @@ function ScheduleView({ cityId }) {
 
     return sheetData;
   };
-// Opcje pracowników dla komórki w widoku TRAS.
-// Pozwala wybrać pracownika nawet jeśli jest już przypisany do TRASY z pary.
-// Blokuje pracowników przypisanych tego dnia do innych (niezwiązanych) tras.
-const getAvailableEmployeesForRouteCell = (routeId, day) => {
-  const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-  // Zbierz ID tras z pary (ta + powiązana)
-  const pairIds = new Set(getPairRouteIdsIncludingSelf(routeId).map(String));
+  // Opcje pracowników dla komórki w widoku TRAS.
+  // Pozwala wybrać pracownika nawet jeśli jest już przypisany do TRASY z pary.
+  // Blokuje pracowników przypisanych tego dnia do innych (niezwiązanych) tras.
+  const getAvailableEmployeesForRouteCell = (routeId, day) => {
+    const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-  // Mapa: route_id -> set(employee_id) tego dnia
-  const assignedByRoute = schedules
-    .filter(s => s.date === date && s.route_id)
-    .reduce((map, s) => {
-      const rid = s.route_id.toString();
-      if (!map.has(rid)) map.set(rid, new Set());
-      map.get(rid).add(s.employee_id.toString());
-      return map;
-    }, new Map());
+    // Zbierz ID tras z pary (ta + powiązana)
+    const pairIds = new Set(getPairRouteIdsIncludingSelf(routeId).map(String));
 
-  // Zbiór wszystkich pracowników przypisanych do jakiejkolwiek trasy tego dnia
-  const assignedAnywhere = new Set(
-    schedules
+    // Mapa: route_id -> set(employee_id) tego dnia
+    const assignedByRoute = schedules
       .filter(s => s.date === date && s.route_id)
-      .map(s => s.employee_id.toString())
-  );
+      .reduce((map, s) => {
+        const rid = s.route_id.toString();
+        if (!map.has(rid)) map.set(rid, new Set());
+        map.get(rid).add(s.employee_id.toString());
+        return map;
+      }, new Map());
 
-  return [
-    { value: "", label: "-- brak --" },
-    ...employees
-      .filter(emp => {
-        const empId = emp.id.toString();
+    // Zbiór wszystkich pracowników przypisanych do jakiejkolwiek trasy tego dnia
+    const assignedAnywhere = new Set(
+      schedules
+        .filter(s => s.date === date && s.route_id)
+        .map(s => s.employee_id.toString())
+    );
 
-        // Jeśli pracownik jest już na którejś trasie z pary → dopuść (żeby móc edytować)
-        for (const rid of pairIds) {
-          if (assignedByRoute.get(rid)?.has(empId)) return true;
-        }
+    return [
+      { value: "", label: "-- brak --" },
+      ...employees
+        .filter(emp => {
+          const empId = emp.id.toString();
 
-        // W przeciwnym razie – dopuść tylko, jeśli NIE jest przypisany nigdzie indziej tego dnia
-        return !assignedAnywhere.has(empId);
-      })
-      .map(emp => ({
-        value: emp.id,
-        label: `${emp.first_name} ${emp.last_name}`
-      }))
-  ];
-};
+          // Jeśli pracownik jest już na którejś trasie z pary → dopuść (żeby móc edytować)
+          for (const rid of pairIds) {
+            if (assignedByRoute.get(rid)?.has(empId)) return true;
+          }
+
+          // W przeciwnym razie – dopuść tylko, jeśli NIE jest przypisany nigdzie indziej tego dnia
+          return !assignedAnywhere.has(empId);
+        })
+        .map(emp => ({
+          value: emp.id,
+          label: `${emp.first_name} ${emp.last_name}`
+        }))
+    ];
+  };
 
   /*** === NOWE helpery dla widoku pracowników (multi-wpisy) === ***/
   const getCellSchedulesAll = (employeeId, date) =>
@@ -632,7 +722,7 @@ const getAvailableEmployeesForRouteCell = (routeId, day) => {
                     const entries = getCellSchedulesAll(emp.id, date);
 
                     if (entries.length === 0) {
-                      // brak wpisów -> edytowalny select do dodania pierwszego wpisu (z auto-parą dla trasy)
+                      // brak wpisów -> edytowalny select do dodania pierwszego wpisu
                       const options = getAvailableOptionsForEmployeeCell(emp.id, day);
                       return (
                         <td key={day}>
@@ -648,7 +738,7 @@ const getAvailableEmployeesForRouteCell = (routeId, day) => {
                       );
                     }
 
-                    // są wpisy -> pokaż każdy jako EDYTOWALNY select; jeśli wybór to trasa, zadziała auto-para
+                    // są wpisy -> pokaż każdy jako EDYTOWALNY select; przy trasie próbujemy dodać bliźniaczą tylko jeśli wolna
                     return (
                       <td key={day}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -663,6 +753,9 @@ const getAvailableEmployeesForRouteCell = (routeId, day) => {
                               >
                                 {/* zawsze pokaż aktualną opcję, nawet jeśli nie ma jej w availableOptions */}
                                 <option value={opt.value}>{opt.label}</option>
+                                {/* opcja usunięcia tego wpisu */}
+                                <option value={`D:${entry.id}`}>🗑 Usuń ten wpis</option>
+                                {/* pozostałe opcje */}
                                 {options
                                   .filter(o => o.value !== opt.value) // bez duplikatu aktualnej
                                   .map(o => (
@@ -726,6 +819,8 @@ const getAvailableEmployeesForRouteCell = (routeId, day) => {
                             value={selectedEmployee}
                             onChange={(e) => updateScheduleForRouteCell(rt.id, day, e.target.value)}
                           >
+                            {/* jeśli jest wpis – pozwól szybko usunąć */}
+                            {cell && <option value="DELETE">🗑 Usuń tę trasę (dzień)</option>}
                             {options.map(opt => (
                               <option key={opt.value} value={opt.value}>{opt.label}</option>
                             ))}

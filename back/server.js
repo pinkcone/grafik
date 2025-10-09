@@ -4,13 +4,10 @@ const cors = require('cors');
 const app = express();
 
 const PORT = 5000;
-
-// Ustawienia CORS – zezwalamy tylko na żądania z domeny http://jagrafiko.pl
 const allowedOrigins = ['http://jagrafiko.pl', 'http://localhost:5000/', 'http://localhost:3000'];
+
 const corsOptions = {
   origin: function(origin, callback) {
-    // Jeśli brak origin (np. request z narzędzi typu curl) – zezwalamy
-    console.log("Origin:", origin);
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
@@ -19,7 +16,7 @@ const corsOptions = {
       callback(new Error(`Not allowed by CORS: ${origin}`), false);
     }
   },
-  optionsSuccessStatus: 200 // dla przeglądarek obsługujących starsze wersje
+  optionsSuccessStatus: 200
 };
 
 app.use(cors(corsOptions));
@@ -29,7 +26,7 @@ const cityRoutes = require('./routes/cityRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
 const routeRoutes = require('./routes/routeRoutes');
 const labelRoutes = require('./routes/labelRoutes');
-const userRoutes = require('./routes/userRoutes'); // Endpointy rejestracji i logowania
+const userRoutes = require('./routes/userRoutes');
 const scheduleRoutes = require('./routes/scheduleRoutes');
 
 // Podpięcie tras
