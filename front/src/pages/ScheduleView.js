@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useReactToPrint } from 'react-to-print';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import '../styles/ScheduleView.css';
@@ -24,15 +23,6 @@ function ScheduleView({ cityId }) {
 
   const employeesTableRef = useRef(null);
   const routesTableRef = useRef(null);
-
-  const handlePrintEmployees = useReactToPrint({
-    content: () => employeesTableRef.current,
-    documentTitle: 'Grafik - Widok Pracowników'
-  });
-  const handlePrintRoutes = useReactToPrint({
-    content: () => routesTableRef.current,
-    documentTitle: 'Grafik - Widok Tras'
-  });
 
   const [quarterSchedules, setQuarterSchedules] = useState({});
 
@@ -573,11 +563,11 @@ function ScheduleView({ cityId }) {
   };
 
   const prepareRoutesSheet = () => {
-    const header = ["Trasa", ...days.map(d => `Dzień ${d}`)];
+    const header = ["Trasa", ...days.map(d => `${d}`)];
     const sheetData = [header];
 
     routes.forEach(rt => {
-      const row = [`${rt.name} (${calculateDuration(rt).toFixed(2)}h)`];
+      const row = [`${rt.name}`];
       days.forEach(day => {
         const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const cell = schedules.find(s => s.date === date && s.route_id?.toString() === rt.id.toString());
@@ -661,12 +651,6 @@ function ScheduleView({ cityId }) {
 
       <div style={{ marginBottom: '10px' }}>
         <button onClick={handleExportXLSX}>Eksport do XLSX</button>
-        {viewType === 'employees' && (
-          <button onClick={handlePrintEmployees}>Drukuj Widok Pracowników</button>
-        )}
-        {viewType === 'routes' && (
-          <button onClick={handlePrintRoutes}>Drukuj Widok Tras</button>
-        )}
       </div>
 
       <div style={{ marginBottom: '10px' }}>
