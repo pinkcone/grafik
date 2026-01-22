@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import '../styles/ScheduleView.css';
 
@@ -508,20 +508,33 @@ function ScheduleView({ cityId }) {
     return 0;
   };
 
-  const handleExportXLSX = () => {
-    const wsDataEmployees = prepareEmployeesSheet();
-    const wsDataRoutes = prepareRoutesSheet();
-    const wb = XLSX.utils.book_new();
-    const wsEmployees = XLSX.utils.aoa_to_sheet(wsDataEmployees);
-    XLSX.utils.book_append_sheet(wb, wsEmployees, "Grafik-Pracownicy");
+const handleExportXLSX = () => {
+  const wsDataEmployees = prepareEmployeesSheet();
+  const wsDataRoutes = prepareRoutesSheet();
 
-    const wsRoutes = XLSX.utils.aoa_to_sheet(wsDataRoutes);
-    XLSX.utils.book_append_sheet(wb, wsRoutes, "Grafik-Trasy");
+  const wb = XLSX.utils.book_new();
 
-    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const wsEmployees = XLSX.utils.aoa_to_sheet(wsDataEmployees);
+  const wsRoutes = XLSX.utils.aoa_to_sheet(wsDataRoutes);
 
-    saveAs(new Blob([wbout], { type: "application/octet-stream" }), 'grafik.xlsx');
-  };
+  // 🔥 ZAWIJANIE TEKSTU
+  [wsEmployees, wsRoutes].forEach(ws => {
+    Object.keys(ws).forEach(cell => {
+      if (!cell.startsWith('!')) {
+        ws[cell].s = {
+          alignment: { wrapText: true, vertical: "top" }
+        };
+      }
+    });
+  });
+
+  XLSX.utils.book_append_sheet(wb, wsEmployees, "Grafik-Pracownicy");
+  XLSX.utils.book_append_sheet(wb, wsRoutes, "Grafik-Trasy");
+
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  saveAs(new Blob([wbout]), 'grafik.xlsx');
+};
+
 
   const prepareEmployeesSheet = () => {
     const header = ["Pracownik", ...days.map(d => `${d}`), "Suma godzin"];
@@ -562,27 +575,59 @@ function ScheduleView({ cityId }) {
     return sheetData;
   };
 
-  const prepareRoutesSheet = () => {
-    const header = ["Trasa", ...days.map(d => `${d}`)];
-    const sheetData = [header];
+const prepareRoutesSheet = () => {
+  const header = ["Trasa", ...days.map(d => `${d}`)];
+  const sheetData = [header];
 
-    routes.forEach(rt => {
-      const row = [`${rt.name}`];
-      days.forEach(day => {
-        const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const cell = schedules.find(s => s.date === date && s.route_id?.toString() === rt.id.toString());
-        let cellValue = "";
-        if (cell && cell.employee_id) {
-          const emp = employees.find(e => e.id === cell.employee_id);
-          cellValue = emp ? `${emp.last_name} ${emp.first_name}` : `EmpID=${cell.employee_id}`;
-        }
-        row.push(cellValue);
-      });
-      sheetData.push(row);
+  /** === WIERSZE TRAS === **/
+  routes.forEach(rt => {
+    const row = [rt.name];
+
+    days.forEach(day => {
+      const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const cell = schedules.find(
+        s => s.date === date && s.route_id?.toString() === rt.id.toString()
+      );
+
+      if (cell?.employee_id) {
+        const emp = employees.find(e => e.id === cell.employee_id);
+        row.push(emp ? `${emp.last_name} ${emp.first_name}` : "");
+      } else {
+        row.push("");
+      }
     });
 
-    return sheetData;
-  };
+    sheetData.push(row);
+  });
+
+  /** === SEPARATOR === **/
+  sheetData.push([]);
+
+  /** === LABELS (RAZ) === **/
+  labels.forEach(label => {
+    const labelRow = [`↳ ${label.code}`];
+
+    days.forEach(day => {
+      const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+      const names = schedules
+        .filter(s => s.date === date && s.label === label.code)
+        .map(s => {
+          const emp = employees.find(e => e.id === s.employee_id);
+          return emp ? `${emp.last_name} ${emp.first_name}` : null;
+        })
+        .filter(Boolean);
+
+      // ENTER w komórce
+      labelRow.push(names.join("\n"));
+    });
+
+    sheetData.push(labelRow);
+  });
+
+  return sheetData;
+};
+
 
   // Opcje pracowników dla komórki w widoku TRAS.
   // Pozwala wybrać pracownika nawet jeśli jest już przypisany do TRASY z pary.
