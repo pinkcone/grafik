@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
+import { decorateWorksheet } from './elements/decorateWorksheet';
 import '../styles/ScheduleView.css';
 
 const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
@@ -517,23 +518,29 @@ const handleExportXLSX = () => {
   const wsEmployees = XLSX.utils.aoa_to_sheet(wsDataEmployees);
   const wsRoutes = XLSX.utils.aoa_to_sheet(wsDataRoutes);
 
-  // 🔥 ZAWIJANIE TEKSTU
-  [wsEmployees, wsRoutes].forEach(ws => {
-    Object.keys(ws).forEach(cell => {
-      if (!cell.startsWith('!')) {
-        ws[cell].s = {
-          alignment: { wrapText: true, vertical: "top" }
-        };
-      }
-    });
+  decorateWorksheet({
+    ws: wsEmployees,
+    data: wsDataEmployees,
+    days,
+    year,
+    month
+  });
+
+  decorateWorksheet({
+    ws: wsRoutes,
+    data: wsDataRoutes,
+    days,
+    year,
+    month
   });
 
   XLSX.utils.book_append_sheet(wb, wsEmployees, "Grafik-Pracownicy");
   XLSX.utils.book_append_sheet(wb, wsRoutes, "Grafik-Trasy");
 
-  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-  saveAs(new Blob([wbout]), 'grafik.xlsx');
+  const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  saveAs(new Blob([wbout]), "grafik.xlsx");
 };
+
 
 
   const prepareEmployeesSheet = () => {
