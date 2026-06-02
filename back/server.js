@@ -28,6 +28,7 @@ const routeRoutes = require('./routes/routeRoutes');
 const labelRoutes = require('./routes/labelRoutes');
 const userRoutes = require('./routes/userRoutes');
 const scheduleRoutes = require('./routes/scheduleRoutes');
+const exportRoutes = require('./routes/exportRoutes');
 
 // Podpięcie tras
 app.use('/api/cities', cityRoutes);
@@ -36,6 +37,7 @@ app.use('/api/routes', routeRoutes);
 app.use('/api/labels', labelRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/schedule', scheduleRoutes);
+app.use('/api/export', exportRoutes);
 
 
 

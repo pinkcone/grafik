@@ -78,13 +78,11 @@ export const decorateWorksheet = ({
     return { wch: Math.min(Math.max(maxLen + 1, 7), 45) };
   });
 
-  /* === ROW HEIGHT (ENTER SUPPORT) === */
   ws["!rows"] = data.map(row => {
     const lines = row.join("").split("\n").length;
     return { hpt: Math.max(18, lines * 18) };
   });
 
-  /* === WEEKENDS BACKGROUND === */
 if (markWeekends && days?.length) {
   days.forEach((day, idx) => {
     const d = new Date(year, month - 1, day);
@@ -100,15 +98,14 @@ if (markWeekends && days?.length) {
 
       const c = XLSX.utils.decode_cell(cell);
 
-      // kolumna danego dnia (idx + 1)
       if (c.c === idx + 1) {
         ws[cell].s = {
           ...(ws[cell].s || {}),
           fill: {
             fgColor: {
               rgb: isSunday
-                ? "FFCCCC" // 🔴 niedziela
-                : "EEEEEE" // ⚪ sobota
+                ? "FFCCCC"
+                : "EEEEEE"
             }
           }
         };

@@ -1,8 +1,13 @@
-.mainHome{
+.home-page {
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.mainHome {
     display: flex;
     flex-direction: row;
     gap: 30px;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
-    padding: 20px;
+    flex-wrap: wrap;
 }
