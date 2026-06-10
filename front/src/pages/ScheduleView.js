@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { decorateWorksheet } from './elements/decorateWorksheet';
+import { canDriveWithCategory } from '../utils/licenseCategories';
 import '../styles/ScheduleView.css';
 
 const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
@@ -255,11 +256,16 @@ function ScheduleView({ cityId }) {
       .filter(s => s.date === date && s.route_id && s.employee_id !== employeeId)
       .map(s => s.route_id.toString());
 
-    const availableRoutes = routes.filter(r => !assignedRouteIds.includes(r.id.toString()));
+    const employee = employees.find(e => e.id.toString() === employeeId.toString());
+
+    const availableRoutes = routes.filter(r => {
+      if (assignedRouteIds.includes(r.id.toString())) return false;
+      return canDriveWithCategory(employee?.license_category, r.required_license_category || 'B');
+    });
 
     const routeOptions = availableRoutes.map(r => ({
       value: `R:${r.id}`,
-      label: `${r.name} (${calculateDuration(r).toFixed(2)}h)`
+      label: `${r.name} (${calculateDuration(r).toFixed(2)}h) [${r.required_license_category || 'B'}]`
     }));
 
     const labelOptions = labels.map(l => ({
@@ -662,11 +668,16 @@ const prepareRoutesSheet = () => {
         .map(s => s.employee_id.toString())
     );
 
+    const route = routes.find(r => r.id.toString() === routeId.toString());
+    const requiredLicense = route?.required_license_category || 'B';
+
     return [
       { value: "", label: "-- brak --" },
       ...employees
         .filter(emp => {
           const empId = emp.id.toString();
+
+          if (!canDriveWithCategory(emp.license_category, requiredLicense)) return false;
 
           // Jeśli pracownik jest już na którejś trasie z pary → dopuść (żeby móc edytować)
           for (const rid of pairIds) {
@@ -678,7 +689,7 @@ const prepareRoutesSheet = () => {
         })
         .map(emp => ({
           value: emp.id,
-          label: `${emp.first_name} ${emp.last_name}`
+          label: `${emp.first_name} ${emp.last_name}${emp.license_category ? ` [${emp.license_category}]` : ''}`
         }))
     ];
   };

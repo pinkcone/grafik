@@ -1,6 +1,7 @@
 // controllers/scheduleController.js
-const { Schedule } = require('../models');
+const { Schedule, Employee, Route } = require('../models');
 const { Op } = require('sequelize');
+const { canDriveWithCategory } = require('../utils/licenseCategories');
 
 /**
  * PUT /api/schedule/update-cell
@@ -18,6 +19,26 @@ exports.updateScheduleCell = async (req, res) => {
     else assignment_type = 'none'; // patrz pkt 2 niżej (ENUM)
 
     const user_id = req.user.id;
+
+    if (route_id && employee_id) {
+      const [employee, route] = await Promise.all([
+        Employee.findOne({ where: { id: employee_id, user_id } }),
+        Route.findOne({ where: { id: route_id, user_id } }),
+      ]);
+      if (!employee) {
+        return res.status(400).json({ message: 'Pracownik nie znaleziony.' });
+      }
+      if (!route) {
+        return res.status(400).json({ message: 'Trasa nie znaleziona.' });
+      }
+      if (!canDriveWithCategory(employee.license_category, route.required_license_category)) {
+        const reqCat = route.required_license_category || 'B';
+        const empCat = employee.license_category || 'brak';
+        return res.status(400).json({
+          message: `Kategoria prawa jazdy nie pasuje: trasa wymaga ${reqCat}, pracownik ma ${empCat}.`,
+        });
+      }
+    }
 
     // WYBÓR KLUCZA WYSZUKIWANIA
     const where = route_id

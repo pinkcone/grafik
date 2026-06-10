@@ -1,10 +1,16 @@
+require('dotenv').config();
+
 const express = require('express');
-const { sequelize } = require('./models'); 
+const { sequelize } = require('./models');
 const cors = require('cors');
 const app = express();
 
-const PORT = 5000;
-const allowedOrigins = ['http://jagrafiko.pl', 'http://localhost:5000/', 'http://localhost:3000'];
+const PORT = process.env.PORT || 5000;
+const allowedOrigins = (process.env.ALLOWED_ORIGINS
+  || 'http://jagrafiko.pl,https://jagrafiko.pl,http://localhost:3000,http://localhost:5000')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
 
 const corsOptions = {
   origin: function(origin, callback) {

@@ -23,6 +23,12 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       // Przykład: { segments: [{start: "08:00", end: "13:00"}, {start: "14:30", end: "20:00"}] }
     },
+    required_license_category: {
+      type: DataTypes.ENUM('B', 'C'),
+      allowNull: false,
+      defaultValue: 'B',
+      comment: 'Wymagana kategoria prawa jazdy na trasie (bus = B, ciężarówka = C)',
+    },
     linked_route_id: {
       type: DataTypes.INTEGER,
       allowNull: true,

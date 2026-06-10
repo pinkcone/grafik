@@ -2,9 +2,17 @@ const { Route } = require('../models');
 
 exports.createRoute = async (req, res) => {
   try {
-    const { name, main_city_id, additional_city_id, working_hours, linked_route_id } = req.body;
+    const { name, main_city_id, additional_city_id, working_hours, linked_route_id, required_license_category } = req.body;
     const user_id = req.user.id;
-    const route = await Route.create({ name, main_city_id, additional_city_id, working_hours, linked_route_id, user_id });
+    const route = await Route.create({
+      name,
+      main_city_id,
+      additional_city_id,
+      working_hours,
+      linked_route_id,
+      required_license_category: required_license_category || 'B',
+      user_id,
+    });
     res.status(201).json({ message: 'Trasa utworzona', route });
   } catch (error) {
     res.status(500).json({ error: 'Błąd przy tworzeniu trasy', details: error.message });
@@ -26,11 +34,18 @@ exports.getRoutesByCity = async (req, res) => {
 exports.updateRoute = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, main_city_id, additional_city_id, working_hours, linked_route_id } = req.body;
+    const { name, main_city_id, additional_city_id, working_hours, linked_route_id, required_license_category } = req.body;
     const user_id = req.user.id;
     const route = await Route.findOne({ where: { id, user_id } });
     if (!route) return res.status(404).json({ error: 'Trasa nie znaleziona' });
-    await route.update({ name, main_city_id, additional_city_id, working_hours, linked_route_id });
+    await route.update({
+      name,
+      main_city_id,
+      additional_city_id,
+      working_hours,
+      linked_route_id,
+      required_license_category: required_license_category || 'B',
+    });
     res.json({ message: 'Trasa zaktualizowana', route });
   } catch (error) {
     res.status(500).json({ error: 'Błąd przy aktualizacji trasy', details: error.message });

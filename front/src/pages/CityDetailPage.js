@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import Popup from '../components/Popup';
-import ScheduleView from './ScheduleView'; 
+import ScheduleView from './ScheduleView';
+import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories'; 
 
 
 function CityDetailPage() {
@@ -27,6 +28,7 @@ function CityDetailPage() {
   const [empLastName, setEmpLastName] = useState('');
   const [empPartTime, setEmpPartTime] = useState(1);
   const [empCityId, setEmpCityId] = useState(cityId);
+  const [empLicenseCategory, setEmpLicenseCategory] = useState('');
 
   // Modal dla tras
   const [isRouteModalOpen, setIsRouteModalOpen] = useState(false);
@@ -40,6 +42,7 @@ function CityDetailPage() {
   const [segments, setSegments] = useState([]);
   const [segmentStart, setSegmentStart] = useState('');
   const [segmentEnd, setSegmentEnd] = useState('');
+  const [routeLicenseCategory, setRouteLicenseCategory] = useState('B');
 
   useEffect(() => {
     fetchCity();
@@ -110,6 +113,7 @@ function CityDetailPage() {
     setEmpLastName('');
     setEmpPartTime(1);
     setEmpCityId(cityId); // domyślnie aktualne miasto
+    setEmpLicenseCategory('');
     setIsEmployeeModalOpen(true);
   };
 
@@ -120,6 +124,7 @@ function CityDetailPage() {
     setEmpLastName(emp.last_name);
     setEmpPartTime(emp.part_time);
     setEmpCityId(emp.city_id);
+    setEmpLicenseCategory(emp.license_category || '');
     setIsEmployeeModalOpen(true);
   };
 
@@ -130,6 +135,7 @@ function CityDetailPage() {
       last_name: empLastName,
       part_time: empPartTime,
       city_id: empCityId,
+      license_category: empLicenseCategory || null,
     };
     try {
       let res;
@@ -189,6 +195,7 @@ function CityDetailPage() {
     setSegmentStart('');
     setSegmentEnd('');
     setRouteLinkedId('');
+    setRouteLicenseCategory('B');
     setIsRouteModalOpen(true);
   };
 
@@ -212,6 +219,7 @@ function CityDetailPage() {
     setSegmentStart('');
     setSegmentEnd('');
     setRouteLinkedId(rt.linked_route_id || '');
+    setRouteLicenseCategory(rt.required_license_category || 'B');
     setIsRouteModalOpen(true);
   };
 
@@ -237,6 +245,7 @@ function CityDetailPage() {
       additional_city_id: routeAdditionalCityId || null,
       working_hours: { segments },
       linked_route_id: routeLinkedId || null,
+      required_license_category: routeLicenseCategory || 'B',
     };
     try {
       let res;
@@ -310,6 +319,7 @@ function CityDetailPage() {
                 <th>Imię</th>
                 <th>Nazwisko</th>
                 <th>Część etatu</th>
+                <th>Prawo jazdy</th>
                 <th>Miasto</th>
                 <th>Akcje</th>
               </tr>
@@ -321,6 +331,7 @@ function CityDetailPage() {
                   <td>{emp.first_name}</td>
                   <td>{emp.last_name}</td>
                   <td>{emp.part_time}</td>
+                  <td>{emp.license_category ? LICENSE_CATEGORY_LABELS[emp.license_category] || emp.license_category : '—'}</td>
                   <td>
                     {allCities.find(c => c.id.toString() === emp.city_id.toString())?.name || emp.city_id}
                   </td>
@@ -344,6 +355,7 @@ function CityDetailPage() {
               <tr>
                 <th>ID</th>
                 <th>Nazwa</th>
+                <th>Wym. kat.</th>
                 <th>Godziny pracy</th>
                 <th>Trasa powiązana</th>
                 <th>Dodatkowe miasto</th>
@@ -355,6 +367,7 @@ function CityDetailPage() {
                 <tr key={rt.id}>
                   <td>{rt.id}</td>
                   <td>{rt.name}</td>
+                  <td>{rt.required_license_category || 'B'}</td>
                   <td>
                     {(() => {
                       // Jeśli working_hours jest stringiem, spróbuj sparsować
@@ -417,6 +430,15 @@ function CityDetailPage() {
               ))}
             </select>
           </div>
+          <div>
+            <label>Kategoria prawa jazdy:</label>
+            <select value={empLicenseCategory} onChange={(e) => setEmpLicenseCategory(e.target.value)}>
+              <option value="">— nie ustawiono —</option>
+              {LICENSE_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>{LICENSE_CATEGORY_LABELS[cat]}</option>
+              ))}
+            </select>
+          </div>
           <button type="submit">{employeeModalMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}</button>
         </form>
       </Popup>
@@ -460,6 +482,14 @@ function CityDetailPage() {
                 ))}
               </ul>
             )}
+          </div>
+          <div>
+            <label>Wymagana kategoria prawa jazdy:</label>
+            <select value={routeLicenseCategory} onChange={(e) => setRouteLicenseCategory(e.target.value)} required>
+              {LICENSE_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>{LICENSE_CATEGORY_LABELS[cat]}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label>Trasa powiązana:</label>

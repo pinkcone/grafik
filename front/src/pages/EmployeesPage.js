@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Popup from '../components/Popup';
+import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
 
 const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
 
@@ -18,6 +19,7 @@ function EmployeesPage() {
   const [lastName, setLastName] = useState('');
   const [partTime, setPartTime] = useState(1);
   const [cityId, setCityId] = useState('');
+  const [licenseCategory, setLicenseCategory] = useState('');
 
   useEffect(() => {
     fetchEmployees();
@@ -55,6 +57,7 @@ function EmployeesPage() {
     setLastName('');
     setPartTime(1);
     setCityId('');
+    setLicenseCategory('');
     setIsPopupOpen(true);
   };
 
@@ -65,6 +68,7 @@ function EmployeesPage() {
     setLastName(emp.last_name);
     setPartTime(emp.part_time);
     setCityId(emp.city_id);
+    setLicenseCategory(emp.license_category || '');
     setIsPopupOpen(true);
   };
 
@@ -91,6 +95,7 @@ function EmployeesPage() {
       last_name: lastName,
       part_time: partTime,
       city_id: cityId,
+      license_category: licenseCategory || null,
     };
 
     if (popupMode === 'add') {
@@ -146,6 +151,7 @@ function EmployeesPage() {
             <th onClick={() => sortData('last_name')}>Nazwisko</th>
             <th onClick={() => sortData('part_time')}>Część etatu</th>
             <th onClick={() => sortData('city_id')}>ID Miasta</th>
+            <th onClick={() => sortData('license_category')}>Prawo jazdy</th>
             <th>Akcje</th>
           </tr>
         </thead>
@@ -157,6 +163,7 @@ function EmployeesPage() {
               <td>{emp.last_name}</td>
               <td>{emp.part_time}</td>
               <td>{emp.city_id}</td>
+              <td>{emp.license_category ? LICENSE_CATEGORY_LABELS[emp.license_category] || emp.license_category : '—'}</td>
               <td>
                 <button onClick={() => handleEditEmployeeClick(emp)}>Edytuj</button>
                 <button onClick={() => handleDeleteEmployee(emp.id)}>Usuń</button>
@@ -190,6 +197,15 @@ function EmployeesPage() {
           <div>
             <label>ID Miasta:</label>
             <input type="text" value={cityId} onChange={(e) => setCityId(e.target.value)} required />
+          </div>
+          <div>
+            <label>Kategoria prawa jazdy:</label>
+            <select value={licenseCategory} onChange={(e) => setLicenseCategory(e.target.value)}>
+              <option value="">— nie ustawiono —</option>
+              {LICENSE_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>{LICENSE_CATEGORY_LABELS[cat]}</option>
+              ))}
+            </select>
           </div>
           <button type="submit">{popupMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}</button>
         </form>

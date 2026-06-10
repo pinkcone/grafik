@@ -19,6 +19,11 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: 1.0,
     },
+    license_category: {
+      type: DataTypes.ENUM('B', 'C'),
+      allowNull: true,
+      comment: 'Najwyższa kategoria prawa jazdy pracownika (C uprawnia też do B)',
+    },
     // Klucz do miasta (dla przykładu)
     city_id: {
       type: DataTypes.INTEGER,

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Popup from '../components/Popup';
+import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
 
 const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
 
@@ -19,6 +20,7 @@ function RoutesPage() {
   const [mainCityId, setMainCityId] = useState('');
   const [additionalCityId, setAdditionalCityId] = useState('');
   const [linkedRouteId, setLinkedRouteId] = useState('');
+  const [requiredLicenseCategory, setRequiredLicenseCategory] = useState('B');
 
   // Zarządzanie segmentami czasu
   const [segments, setSegments] = useState([]);
@@ -78,6 +80,7 @@ function RoutesPage() {
     setSegments([]);
     setSegmentStart('');
     setSegmentEnd('');
+    setRequiredLicenseCategory('B');
     setIsPopupOpen(true);
   };
 
@@ -92,6 +95,7 @@ function RoutesPage() {
     setSegments(route.working_hours?.segments || []);
     setSegmentStart('');
     setSegmentEnd('');
+    setRequiredLicenseCategory(route.required_license_category || 'B');
     setIsPopupOpen(true);
   };
 
@@ -134,6 +138,7 @@ function RoutesPage() {
       additional_city_id: additionalCityId || null,
       working_hours: { segments },
       linked_route_id: linkedRouteId || null,
+      required_license_category: requiredLicenseCategory || 'B',
     };
 
     if (popupMode === 'add') {
@@ -187,6 +192,7 @@ function RoutesPage() {
             <th onClick={() => sortData('id')}>ID</th>
             <th onClick={() => sortData('name')}>Nazwa</th>
             <th onClick={() => sortData('main_city_id')}>ID Głównego Miasta</th>
+            <th onClick={() => sortData('required_license_category')}>Wym. kat.</th>
             <th>Godziny pracy</th>
             <th>Akcje</th>
           </tr>
@@ -197,6 +203,7 @@ function RoutesPage() {
               <td>{r.id}</td>
               <td>{r.name}</td>
               <td>{r.main_city_id}</td>
+              <td>{r.required_license_category || 'B'}</td>
               <td>{JSON.stringify(r.working_hours)}</td>
               <td>
                 <button onClick={() => handleEditRouteClick(r)}>Edytuj</button>
@@ -286,6 +293,18 @@ function RoutesPage() {
               value={linkedRouteId}
               onChange={(e) => setLinkedRouteId(e.target.value)}
             />
+          </div>
+          <div>
+            <label>Wymagana kategoria prawa jazdy:</label>
+            <select
+              value={requiredLicenseCategory}
+              onChange={(e) => setRequiredLicenseCategory(e.target.value)}
+              required
+            >
+              {LICENSE_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>{LICENSE_CATEGORY_LABELS[cat]}</option>
+              ))}
+            </select>
           </div>
           <button type="submit">
             {popupMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}

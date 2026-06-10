@@ -1,0 +1,25 @@
+# Przykład: /etc/nginx/sites-available/grafik
+# Po skopiowaniu: sudo ln -s ... sites-enabled && sudo nginx -t && sudo systemctl reload nginx
+
+server {
+    listen 80;
+    server_name jagrafiko.pl www.jagrafiko.pl;
+
+    root /var/www/grafik/front/build;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Certbot (HTTPS): sudo certbot --nginx -d jagrafiko.pl -d www.jagrafiko.pl

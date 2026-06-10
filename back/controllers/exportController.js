@@ -151,6 +151,7 @@ const buildPodsumowanie = ({
 const serializeRoute = (route, routeDaysByRouteId) => ({
   id: route.id,
   nazwa: route.name,
+  wymagana_kategoria_prawa_jazdy: route.required_license_category || 'B',
   main_city_id: route.main_city_id,
   additional_city_id: route.additional_city_id,
   linked_route_id: route.linked_route_id,
@@ -227,6 +228,7 @@ exports.exportUserData = async (req, res) => {
           imie: e.first_name,
           nazwisko: e.last_name,
           czesc_etatu: e.part_time,
+          kategoria_prawa_jazdy: e.license_category,
           grafik: schedules
             .filter((s) => s.employee_id === e.id)
             .map((s) => serializeSchedule(s, employeeById, routeById)),
