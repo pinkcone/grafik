@@ -1,13 +1,9 @@
-.home-page {
-    padding: 20px;
-    box-sizing: border-box;
-}
-
-.mainHome {
+.mainHome{
     display: flex;
     flex-direction: row;
     gap: 30px;
     align-items: flex-start;
     justify-content: center;
     flex-wrap: wrap;
+    padding: 20px;
 }
