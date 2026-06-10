@@ -44,8 +44,9 @@ jobs:
 
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-          ssh -o IdentitiesOnly=yes \
-            -o BatchMode=yes \
+          # Bez -i klucz idzie z ssh-agent — NIE używaj IdentitiesOnly=yes (blokuje agenta)
+          ssh -o BatchMode=yes \
+            -o PreferredAuthentications=publickey \
             -o StrictHostKeyChecking=yes \
             "${SSH_USER}@${HOST}" \
             "cd '${DIR}' && bash scripts/deploy.sh"
