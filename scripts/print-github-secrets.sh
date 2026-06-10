@@ -19,8 +19,10 @@ if ! ssh-keygen -y -f "$KEY" > /dev/null 2>&1; then
 fi
 
 echo "========== SSH_PRIVATE_KEY_B64 (wpisz jako sekret) =========="
-base64 -w 0 < "$KEY"
+B64="$(base64 -w 0 < "$KEY")"
+echo "$B64"
 echo ""
+echo "Długość B64 (znaki): ${#B64}  — ta sama liczba musi być w logu Actions przy B64 length"
 echo ""
 echo "========== SSH_USER =========="
 echo "root"
