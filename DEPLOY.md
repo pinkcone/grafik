@@ -103,9 +103,20 @@ Repozytarium → **Settings** → **Secrets and variables** → **Actions** → 
 |--------|----------|------|
 | `SSH_HOST` | `123.45.67.89` lub `jagrafiko.pl` | Adres serwera |
 | `SSH_USER` | `ubuntu` | Użytkownik SSH |
-| `SSH_PRIVATE_KEY` | cała zawartość pliku `grafik_deploy` | Klucz prywatny |
+| `SSH_PRIVATE_KEY` | cały plik `grafik-deploy` | Klucz prywatny (trudne do wklejenia) |
+| `SSH_PRIVATE_KEY_B64` | wynik `base64 -w 0 < ~/.ssh/grafik-deploy` | **Zalecane** — jedna linia, bez problemów z formatowaniem |
 | `SSH_PORT` | `22` | Opcjonalnie, jeśli inny port |
 | `APP_DIR` | `/var/www/grafik` | Katalog z repozytorium |
+
+**Ważne:** `SSH_HOST` = **IP serwera** (nie `jagrafiko.pl`, jeśli DNS nie działa z GitHuba). Na serwerze: `curl -4 ifconfig.me`.
+
+### Szybkie wygenerowanie wartości sekretów (na serwerze)
+
+```bash
+bash scripts/print-github-secrets.sh
+```
+
+Wystarczy **jeden** klucz: albo `SSH_PRIVATE_KEY`, albo `SSH_PRIVATE_KEY_B64` (polecane).
 
 ## Test
 
