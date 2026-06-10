@@ -1,0 +1,9 @@
+# Zależności — nigdy w repo
+**/node_modules/
+
+# Build frontendu
+front/build/
+
+# Env
+**/.env
+!**/.env.example
