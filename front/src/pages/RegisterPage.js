@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import '../styles/LoginPage.css';
 
 function RegisterPage() {
   const [firstName, setFirstName] = useState('');
@@ -38,7 +39,7 @@ function RegisterPage() {
   };
 
   return (
-    <div>
+    <div className="main">
       <h2>Rejestracja</h2>
       <form onSubmit={handleRegister}>
         <div>
@@ -78,7 +79,7 @@ function RegisterPage() {
           />
         </div>
         {error && <p style={{ color: 'red' }}>{error}</p>}
-        <button type="submit">Zarejestruj się</button>
+        <button type="submit" className="btn-primary">Zarejestruj się</button>
       </form>
       <p>Masz już konto? <Link to="/login">Zaloguj się</Link></p>
     </div>

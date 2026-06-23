@@ -137,7 +137,9 @@ function EmployeesPage() {
   return (
     <div>
       <h2>Moi Pracownicy</h2>
-      <button onClick={handleAddEmployeeClick}>Dodaj pracownika</button>
+      <div className="btn-row">
+        <button type="button" onClick={handleAddEmployeeClick}>Dodaj pracownika</button>
+      </div>
       <table border="1">
         <thead>
           <tr>
@@ -159,9 +161,9 @@ function EmployeesPage() {
               <td>{emp.part_time}</td>
               <td>{emp.city_id}</td>
               <td>{emp.license_category ? LICENSE_CATEGORY_LABELS[emp.license_category] || emp.license_category : '—'}</td>
-              <td>
-                <button onClick={() => handleEditEmployeeClick(emp)}>Edytuj</button>
-                <button onClick={() => handleDeleteEmployee(emp.id)}>Usuń</button>
+              <td className="table-actions">
+                <button type="button" className="btn-sm" onClick={() => handleEditEmployeeClick(emp)}>Edytuj</button>
+                <button type="button" className="btn-sm btn-danger" onClick={() => handleDeleteEmployee(emp.id)}>Usuń</button>
               </td>
             </tr>
           ))}
@@ -204,6 +206,7 @@ function EmployeesPage() {
           </div>
           <button
             type="submit"
+            className="btn-primary"
             onClick={() => logEmployeeLicense('2b. kliknięto przycisk Zapisz', { kategoria: licenseCategory || null })}
           >
             {popupMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}

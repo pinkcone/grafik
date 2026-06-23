@@ -130,8 +130,8 @@ function CitiesPage() {
       <h2>Moje Miasta</h2>
 
       <div className="toolbar">
-        <button onClick={openAddForm}>Dodaj miasto</button>
-        <button onClick={sortByName}>
+        <button type="button" onClick={openAddForm}>Dodaj miasto</button>
+        <button type="button" className="btn-secondary" onClick={sortByName}>
           Sortuj po nazwie ({sortOrder === 'asc' ? 'A→Z' : 'Z→A'})
         </button>
       </div>
@@ -154,11 +154,11 @@ function CitiesPage() {
       <Popup isOpen={isActionsOpen} onClose={() => setIsActionsOpen(false)}>
         <h3>Miasto: {currentCity?.name}</h3>
         <div className="actions">
-          <button onClick={() => openCity(currentCity.id)}>Otwórz</button>
-          <button onClick={() => { setIsActionsOpen(false); openEditForm(currentCity); }}>
+          <button type="button" className="btn-primary" onClick={() => openCity(currentCity.id)}>Otwórz</button>
+          <button type="button" onClick={() => { setIsActionsOpen(false); openEditForm(currentCity); }}>
             Edytuj
           </button>
-          <button onClick={() => handleDeleteCity(currentCity.id)}>
+          <button type="button" className="btn-danger" onClick={() => handleDeleteCity(currentCity.id)}>
             Usuń
           </button>
         </div>
@@ -178,7 +178,7 @@ function CitiesPage() {
               required
             />
           </div>
-          <button type="submit">
+          <button type="submit" className="btn-primary">
             {formMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}
           </button>
         </form>

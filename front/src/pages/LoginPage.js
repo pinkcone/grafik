@@ -55,7 +55,7 @@ function LoginPage() {
           />
         </div>
         {error && <p style={{ color: 'red' }}>{error}</p>}
-        <button type="submit">Zaloguj się</button>
+        <button type="submit" className="btn-primary">Zaloguj się</button>
       </form>
       <p>Nie masz konta? <Link to="/register">Zarejestruj się</Link></p>
     </div>

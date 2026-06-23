@@ -334,19 +334,39 @@ function CityDetailPage() {
   return (
     <div>
       <h2>Szczegóły Miasta: {city ? city.name : 'Ładowanie...'}</h2>
-      <div style={{ marginBottom: '20px' }}>
-        <button onClick={() => setActiveTab('employees')}>Pracownicy</button>
-        <button onClick={() => setActiveTab('routes')}>Trasy</button>
+      <div className="btn-tabs">
+        <button
+          type="button"
+          className={`btn-tab${activeTab === 'employees' ? ' btn-tab--active' : ''}`}
+          onClick={() => setActiveTab('employees')}
+        >
+          Pracownicy
+        </button>
+        <button
+          type="button"
+          className={`btn-tab${activeTab === 'routes' ? ' btn-tab--active' : ''}`}
+          onClick={() => setActiveTab('routes')}
+        >
+          Trasy
+        </button>
       </div>
-      <button onClick={() => setShowSchedule(!showSchedule)}>
-  {showSchedule ? 'Ukryj grafik' : 'Ułóż grafik'}
-</button>
+      <div className="btn-row">
+        <button
+          type="button"
+          className={showSchedule ? 'btn-secondary' : 'btn-primary'}
+          onClick={() => setShowSchedule(!showSchedule)}
+        >
+          {showSchedule ? 'Ukryj grafik' : 'Ułóż grafik'}
+        </button>
+      </div>
 
 {showSchedule && <ScheduleView cityId={cityId} />}
       {activeTab === 'employees' && (
         <div>
           <h3>Pracownicy</h3>
-          <button onClick={openEmployeeModalForAdd}>Dodaj pracownika</button>
+          <div className="btn-row">
+            <button type="button" onClick={openEmployeeModalForAdd}>Dodaj pracownika</button>
+          </div>
           <table border="1" cellPadding="5">
             <thead>
               <tr>
@@ -370,9 +390,9 @@ function CityDetailPage() {
                   <td>
                     {allCities.find(c => c.id.toString() === emp.city_id.toString())?.name || emp.city_id}
                   </td>
-                  <td>
-                    <button onClick={() => openEmployeeModalForEdit(emp)}>Edytuj</button>
-                    <button onClick={() => handleEmployeeDelete(emp.id)}>Usuń</button>
+                  <td className="table-actions">
+                    <button type="button" className="btn-sm" onClick={() => openEmployeeModalForEdit(emp)}>Edytuj</button>
+                    <button type="button" className="btn-sm btn-danger" onClick={() => handleEmployeeDelete(emp.id)}>Usuń</button>
                   </td>
                 </tr>
               ))}
@@ -384,7 +404,9 @@ function CityDetailPage() {
       {activeTab === 'routes' && (
         <div>
           <h3>Trasy</h3>
-          <button onClick={openRouteModalForAdd}>Dodaj trasę</button>
+          <div className="btn-row">
+            <button type="button" onClick={openRouteModalForAdd}>Dodaj trasę</button>
+          </div>
           <table border="1" cellPadding="5">
             <thead>
               <tr>
@@ -429,9 +451,9 @@ function CityDetailPage() {
                       rt.additional_city_id ||
                       '-'}
                   </td>
-                  <td>
-                    <button onClick={() => openRouteModalForEdit(rt)}>Edytuj</button>
-                    <button onClick={() => handleRouteDelete(rt.id)}>Usuń</button>
+                  <td className="table-actions">
+                    <button type="button" className="btn-sm" onClick={() => openRouteModalForEdit(rt)}>Edytuj</button>
+                    <button type="button" className="btn-sm btn-danger" onClick={() => handleRouteDelete(rt.id)}>Usuń</button>
                   </td>
                 </tr>
               ))}
@@ -475,6 +497,7 @@ function CityDetailPage() {
           </div>
           <button
             type="submit"
+            className="btn-primary"
             onClick={() => logEmployeeLicense('2b. kliknięto przycisk Zapisz', { kategoria: empLicenseCategory || null })}
           >
             {employeeModalMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}
@@ -509,14 +532,14 @@ function CityDetailPage() {
               <input type="time" value={segmentStart} onChange={(e) => setSegmentStart(e.target.value)} />
               <span> do </span>
               <input type="time" value={segmentEnd} onChange={(e) => setSegmentEnd(e.target.value)} />
-              <button type="button" onClick={addSegment}>Dodaj segment</button>
+              <button type="button" className="btn-sm btn-secondary" onClick={addSegment}>Dodaj segment</button>
             </div>
             {segments.length > 0 && (
               <ul>
                 {segments.map((seg, idx) => (
                   <li key={idx}>
                     {seg.start} - {seg.end}{' '}
-                    <button type="button" onClick={() => removeSegment(idx)}>Usuń</button>
+                    <button type="button" className="btn-sm btn-danger" onClick={() => removeSegment(idx)}>Usuń</button>
                   </li>
                 ))}
               </ul>
@@ -543,6 +566,7 @@ function CityDetailPage() {
           </div>
           <button
             type="submit"
+            className="btn-primary"
             onClick={() => logRouteLicense('2b. kliknięto przycisk Zapisz', { kategoria: routeLicenseCategory || null })}
           >
             {routeModalMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}

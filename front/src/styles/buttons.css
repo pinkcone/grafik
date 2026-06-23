@@ -1,0 +1,218 @@
+/* Przyciski — paleta: #769194, #1a2e30, #e0f0f0 */
+
+:root {
+  --btn-primary: #1a2e30;
+  --btn-primary-hover: #2d4548;
+  --btn-accent: #769194;
+  --btn-accent-hover: #5a7376;
+  --btn-surface: #e0f0f0;
+  --btn-danger: #b33a3a;
+  --btn-danger-hover: #922f2f;
+  --btn-radius: 10px;
+  --btn-font: inherit;
+}
+
+/* Bazowy przycisk (wszędzie poza nagłówkiem) */
+button:not(.app-header__brand):not(.app-header__logout) {
+  font-family: var(--btn-font);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 10px 18px;
+  border-radius: var(--btn-radius);
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease,
+    transform 0.12s ease, box-shadow 0.2s ease;
+  background: linear-gradient(135deg, var(--btn-accent) 0%, var(--btn-accent-hover) 100%);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(26, 46, 48, 0.12);
+}
+
+button:not(.app-header__brand):not(.app-header__logout):hover {
+  background: linear-gradient(135deg, var(--btn-accent-hover) 0%, #4a6366 100%);
+  box-shadow: 0 4px 12px rgba(26, 46, 48, 0.18);
+}
+
+button:not(.app-header__brand):not(.app-header__logout):active {
+  transform: scale(0.97);
+}
+
+button:not(.app-header__brand):not(.app-header__logout):disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Grupa przycisków obok siebie */
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.btn-row--tight {
+  gap: 6px;
+  margin-bottom: 0;
+}
+
+/* Zakładki (Pracownicy / Trasy) */
+.btn-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 12px;
+  border: 1px solid rgba(118, 145, 148, 0.3);
+  margin-bottom: 16px;
+}
+
+.btn-tab {
+  background: transparent !important;
+  color: var(--btn-primary) !important;
+  box-shadow: none !important;
+  border: 2px solid transparent !important;
+  padding: 8px 20px !important;
+  border-radius: 8px !important;
+}
+
+.btn-tab:hover {
+  background: var(--btn-surface) !important;
+}
+
+.btn-tab--active {
+  background: var(--btn-primary) !important;
+  color: #e0f0f0 !important;
+  border-color: var(--btn-primary) !important;
+}
+
+.btn-tab--active:hover {
+  background: var(--btn-primary-hover) !important;
+}
+
+/* Ciemny / główna akcja (submit, logowanie) */
+.btn-primary {
+  background: var(--btn-primary) !important;
+  color: #e0f0f0 !important;
+  border-color: var(--btn-primary) !important;
+}
+
+.btn-primary:hover {
+  background: var(--btn-primary-hover) !important;
+  border-color: var(--btn-primary-hover) !important;
+}
+
+/* Drugorzędny (sortuj, zamknij, anuluj) */
+.btn-secondary {
+  background: var(--btn-surface) !important;
+  color: var(--btn-primary) !important;
+  border: 2px solid rgba(118, 145, 148, 0.45) !important;
+  box-shadow: none !important;
+}
+
+.btn-secondary:hover {
+  background: #fff !important;
+  border-color: var(--btn-accent) !important;
+}
+
+/* Usuń */
+.btn-danger {
+  background: var(--btn-danger) !important;
+  color: #fff !important;
+  border-color: var(--btn-danger) !important;
+}
+
+.btn-danger:hover {
+  background: var(--btn-danger-hover) !important;
+  border-color: var(--btn-danger-hover) !important;
+}
+
+/* Mały (w tabelach akcji, segmenty) */
+.btn-sm {
+  padding: 6px 12px !important;
+  font-size: 0.82rem !important;
+  border-radius: 8px !important;
+}
+
+/* Toolbar grafiku — tylko przyciski POZA tabelą */
+.schedule-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.schedule-toolbar button {
+  margin: 0;
+}
+
+td.table-actions,
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Popup */
+.popup-content {
+  background: #fff;
+  padding: 24px;
+  border-radius: 14px;
+  min-width: 320px;
+  max-width: 96vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 50px rgba(26, 46, 48, 0.2);
+}
+
+.popup-content h3 {
+  margin-top: 0;
+  color: var(--btn-primary);
+}
+
+.popup-content form > div {
+  margin-bottom: 12px;
+}
+
+.popup-content label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--btn-primary);
+  margin-bottom: 4px;
+}
+
+.popup-content input,
+.popup-content select,
+.popup-content textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(118, 145, 148, 0.45);
+  font-size: 0.95rem;
+}
+
+.popup-content input:focus,
+.popup-content select:focus {
+  outline: 2px solid rgba(118, 145, 148, 0.5);
+  border-color: var(--btn-accent);
+}
+
+.popup-footer {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.popup-actions,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}

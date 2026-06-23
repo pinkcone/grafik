@@ -25,16 +25,6 @@ body{
     flex-direction: column;
     align-items: center;
 }
-.main form button{
-    padding: 10px 20px;
-    font-size: 18px;
-    border-radius: 20px;
-    border: none;
-    background-color: black;
-    color: white;
-}
-.main form button:hover{
-    background-color: aliceblue;
-    color: black;
-    cursor: pointer;
+.main form button {
+  min-width: 200px;
 }

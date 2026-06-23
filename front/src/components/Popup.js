@@ -1,35 +1,31 @@
 // src/components/Popup.js
 import React from 'react';
 
-const popupStyle = {
+const overlayStyle = {
   position: 'fixed',
   top: 0,
   left: 0,
   right: 0,
   bottom: 0,
-  backgroundColor: 'rgba(0,0,0,0.5)',
+  backgroundColor: 'rgba(0, 0, 0, 0.45)',
   display: 'flex',
   justifyContent: 'center',
   alignItems: 'center',
-};
-
-const popupContentStyle = {
-  background: '#fff',
-  padding: '20px',
-  borderRadius: '5px',
-  minWidth: '300px',
+  zIndex: 1000,
 };
 
 const Popup = ({ isOpen, onClose, children }) => {
   if (!isOpen) return null;
 
   return (
-    <div style={popupStyle}>
-      <div style={popupContentStyle}>
+    <div style={overlayStyle} onClick={onClose}>
+      <div className="popup-content" onClick={(e) => e.stopPropagation()}>
         {children}
-        <button type="button" onClick={onClose} style={{ marginTop: '10px' }}>
-          Zamknij
-        </button>
+        <div className="popup-footer">
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            Zamknij
+          </button>
+        </div>
       </div>
     </div>
   );

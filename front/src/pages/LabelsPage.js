@@ -108,7 +108,9 @@ function LabelsPage() {
   return (
     <div>
       <h2>Etykiety</h2>
-      <button onClick={openModalForAdd}>Dodaj etykietę</button>
+      <div className="btn-row">
+        <button type="button" onClick={openModalForAdd}>Dodaj etykietę</button>
+      </div>
       <table border="1" cellPadding="5">
         <thead>
           <tr>
@@ -124,9 +126,9 @@ function LabelsPage() {
               <td>{label.code}</td>
               <td>{label.default_hours}</td>
               <td>{label.description}</td>
-              <td>
-                <button onClick={() => openModalForEdit(label)}>Edytuj</button>
-                <button onClick={() => handleDelete(label.code)}>Usuń</button>
+              <td className="table-actions">
+                <button type="button" className="btn-sm" onClick={() => openModalForEdit(label)}>Edytuj</button>
+                <button type="button" className="btn-sm btn-danger" onClick={() => handleDelete(label.code)}>Usuń</button>
               </td>
             </tr>
           ))}
@@ -163,7 +165,7 @@ function LabelsPage() {
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
-          <button type="submit">{modalMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}</button>
+          <button type="submit" className="btn-primary">{modalMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}</button>
         </form>
       </Popup>
     </div>

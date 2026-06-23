@@ -185,7 +185,9 @@ function RoutesPage() {
   return (
     <div>
       <h2>Moje Trasy</h2>
-      <button onClick={handleAddRouteClick}>Dodaj trasę</button>
+      <div className="btn-row">
+        <button type="button" onClick={handleAddRouteClick}>Dodaj trasę</button>
+      </div>
       <table border="1">
         <thead>
           <tr>
@@ -205,9 +207,9 @@ function RoutesPage() {
               <td>{r.main_city_id}</td>
               <td>{r.required_license_category || 'B'}</td>
               <td>{JSON.stringify(r.working_hours)}</td>
-              <td>
-                <button onClick={() => handleEditRouteClick(r)}>Edytuj</button>
-                <button onClick={() => handleDeleteRoute(r.id)}>Usuń</button>
+              <td className="table-actions">
+                <button type="button" className="btn-sm" onClick={() => handleEditRouteClick(r)}>Edytuj</button>
+                <button type="button" className="btn-sm btn-danger" onClick={() => handleDeleteRoute(r.id)}>Usuń</button>
               </td>
             </tr>
           ))}
@@ -269,7 +271,7 @@ function RoutesPage() {
                 value={segmentEnd}
                 onChange={(e) => setSegmentEnd(e.target.value)}
               />
-              <button type="button" onClick={addSegment}>
+              <button type="button" className="btn-sm btn-secondary" onClick={addSegment}>
                 Dodaj segment
               </button>
             </div>
@@ -278,7 +280,7 @@ function RoutesPage() {
                 {segments.map((seg, idx) => (
                   <li key={idx}>
                     {seg.start} - {seg.end}{' '}
-                    <button type="button" onClick={() => removeSegment(idx)}>
+                    <button type="button" className="btn-sm btn-danger" onClick={() => removeSegment(idx)}>
                       Usuń
                     </button>
                   </li>
@@ -308,6 +310,7 @@ function RoutesPage() {
           </div>
           <button
             type="submit"
+            className="btn-primary"
             onClick={() => logRouteLicense('2b. kliknięto przycisk Zapisz', { kategoria: requiredLicenseCategory || null })}
           >
             {popupMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}

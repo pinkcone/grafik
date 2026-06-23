@@ -706,8 +706,8 @@ const prepareRoutesSheet = () => {
     <div>
       <h2>Ułóż grafik – Widok: {viewType === 'employees' ? "wg Pracowników" : "wg Tras"}</h2>
 
-      <div style={{ marginBottom: '10px' }}>
-        <button onClick={handleExportXLSX}>Eksport do XLSX</button>
+      <div className="schedule-toolbar">
+        <button type="button" onClick={handleExportXLSX}>Eksport do XLSX</button>
       </div>
 
       <div style={{ marginBottom: '10px' }}>
@@ -726,9 +726,21 @@ const prepareRoutesSheet = () => {
         />
       </div>
 
-      <div style={{ marginBottom: '10px' }}>
-        <button onClick={() => setViewType('employees')}>Ułóż wg Pracowników</button>
-        <button onClick={() => setViewType('routes')}>Ułóż wg Tras</button>
+      <div className="btn-tabs schedule-toolbar">
+        <button
+          type="button"
+          className={`btn-tab${viewType === 'employees' ? ' btn-tab--active' : ''}`}
+          onClick={() => setViewType('employees')}
+        >
+          Ułóż wg Pracowników
+        </button>
+        <button
+          type="button"
+          className={`btn-tab${viewType === 'routes' ? ' btn-tab--active' : ''}`}
+          onClick={() => setViewType('routes')}
+        >
+          Ułóż wg Tras
+        </button>
       </div>
 
       {viewType === 'employees' && (
