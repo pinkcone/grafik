@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Popup from '../components/Popup';
 import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
+import { formatYesNo } from '../utils/routeAssignment';
 import { logRouteLicense } from '../utils/licenseLog';
 
 function RoutesPage() {
@@ -20,6 +21,7 @@ function RoutesPage() {
   const [additionalCityId, setAdditionalCityId] = useState('');
   const [linkedRouteId, setLinkedRouteId] = useState('');
   const [requiredLicenseCategory, setRequiredLicenseCategory] = useState('B');
+  const [requiresSpecialPermissions, setRequiresSpecialPermissions] = useState(false);
 
   // Zarządzanie segmentami czasu
   const [segments, setSegments] = useState([]);
@@ -81,6 +83,7 @@ function RoutesPage() {
     setSegmentStart('');
     setSegmentEnd('');
     setRequiredLicenseCategory('B');
+    setRequiresSpecialPermissions(false);
     setIsPopupOpen(true);
   };
 
@@ -100,6 +103,7 @@ function RoutesPage() {
     setSegmentStart('');
     setSegmentEnd('');
     setRequiredLicenseCategory(route.required_license_category || 'B');
+    setRequiresSpecialPermissions(!!route.requires_special_permissions);
     setIsPopupOpen(true);
   };
 
@@ -149,6 +153,7 @@ function RoutesPage() {
       working_hours: { segments },
       linked_route_id: linkedRouteId || null,
       required_license_category: requiredLicenseCategory || 'B',
+      requires_special_permissions: requiresSpecialPermissions,
     };
     logRouteLicense('3. wysyłam do API', routeData);
 
@@ -195,6 +200,7 @@ function RoutesPage() {
             <th onClick={() => sortData('name')}>Nazwa</th>
             <th onClick={() => sortData('main_city_id')}>ID Głównego Miasta</th>
             <th onClick={() => sortData('required_license_category')}>Wym. kat.</th>
+            <th onClick={() => sortData('requires_special_permissions')}>Spec. upr.</th>
             <th>Godziny pracy</th>
             <th>Akcje</th>
           </tr>
@@ -206,6 +212,7 @@ function RoutesPage() {
               <td>{r.name}</td>
               <td>{r.main_city_id}</td>
               <td>{r.required_license_category || 'B'}</td>
+              <td>{formatYesNo(r.requires_special_permissions)}</td>
               <td>{JSON.stringify(r.working_hours)}</td>
               <td className="table-actions">
                 <button type="button" className="btn-sm" onClick={() => handleEditRouteClick(r)}>Edytuj</button>
@@ -307,6 +314,16 @@ function RoutesPage() {
                 <option key={cat} value={cat}>{LICENSE_CATEGORY_LABELS[cat]}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label>
+              <input
+                type="checkbox"
+                checked={requiresSpecialPermissions}
+                onChange={(e) => setRequiresSpecialPermissions(e.target.checked)}
+              />
+              {' '}Wymaga specjalnych uprawnień
+            </label>
           </div>
           <button
             type="submit"

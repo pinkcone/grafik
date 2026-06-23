@@ -1,4 +1,5 @@
 const { Employee } = require('../models');
+const { toBoolean } = require('../utils/routeAssignment');
 
 const normalizeLicenseCategory = (value) => {
   if (value === 'B' || value === 'C') return value;
@@ -7,7 +8,7 @@ const normalizeLicenseCategory = (value) => {
 
 exports.createEmployee = async (req, res) => {
   try {
-    const { first_name, last_name, part_time, city_id, license_category } = req.body;
+    const { first_name, last_name, part_time, city_id, license_category, special_permissions } = req.body;
     const user_id = req.user.id;
     const employee = await Employee.create({
       first_name,
@@ -15,6 +16,7 @@ exports.createEmployee = async (req, res) => {
       part_time,
       city_id,
       license_category: normalizeLicenseCategory(license_category),
+      special_permissions: toBoolean(special_permissions),
       user_id,
     });
     const fresh = await Employee.findByPk(employee.id);
@@ -48,9 +50,10 @@ exports.getEmployeesByCity = async (req, res) => {
 exports.updateEmployee = async (req, res) => {
   try {
     const { id } = req.params;
-    const { first_name, last_name, part_time, city_id, license_category } = req.body;
+    const { first_name, last_name, part_time, city_id, license_category, special_permissions } = req.body;
     const user_id = req.user.id;
     const savedCategory = normalizeLicenseCategory(license_category);
+    const savedSpecialPermissions = toBoolean(special_permissions);
 
     const employee = await Employee.findOne({ where: { id, user_id } });
     if (!employee) return res.status(404).json({ error: 'Pracownik nie znaleziony' });
@@ -61,6 +64,7 @@ exports.updateEmployee = async (req, res) => {
       part_time,
       city_id,
       license_category: savedCategory,
+      special_permissions: savedSpecialPermissions,
     });
 
     const fresh = await Employee.findByPk(employee.id);

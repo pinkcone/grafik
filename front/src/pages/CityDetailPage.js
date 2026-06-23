@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import Popup from '../components/Popup';
 import ScheduleView from './ScheduleView';
 import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
+import { formatYesNo } from '../utils/routeAssignment';
 import { logEmployeeLicense, logRouteLicense, logLicenseReady } from '../utils/licenseLog';
 
 
@@ -30,6 +31,7 @@ function CityDetailPage() {
   const [empPartTime, setEmpPartTime] = useState(1);
   const [empCityId, setEmpCityId] = useState(cityId);
   const [empLicenseCategory, setEmpLicenseCategory] = useState('');
+  const [empSpecialPermissions, setEmpSpecialPermissions] = useState(false);
 
   // Modal dla tras
   const [isRouteModalOpen, setIsRouteModalOpen] = useState(false);
@@ -44,6 +46,7 @@ function CityDetailPage() {
   const [segmentStart, setSegmentStart] = useState('');
   const [segmentEnd, setSegmentEnd] = useState('');
   const [routeLicenseCategory, setRouteLicenseCategory] = useState('B');
+  const [routeRequiresSpecialPermissions, setRouteRequiresSpecialPermissions] = useState(false);
 
   useEffect(() => {
     logLicenseReady({ cityId });
@@ -116,6 +119,7 @@ function CityDetailPage() {
     setEmpPartTime(1);
     setEmpCityId(String(cityId)); // domyślnie aktualne miasto
     setEmpLicenseCategory('');
+    setEmpSpecialPermissions(false);
     setIsEmployeeModalOpen(true);
   };
 
@@ -128,6 +132,7 @@ function CityDetailPage() {
     setEmpPartTime(emp.part_time);
     setEmpCityId(String(emp.city_id ?? cityId));
     setEmpLicenseCategory(emp.license_category || '');
+    setEmpSpecialPermissions(!!emp.special_permissions);
     setIsEmployeeModalOpen(true);
   };
 
@@ -145,6 +150,7 @@ function CityDetailPage() {
       part_time: empPartTime,
       city_id: empCityId,
       license_category: empLicenseCategory || null,
+      special_permissions: empSpecialPermissions,
     };
     logEmployeeLicense('3. wysyłam do API', employeeData);
     try {
@@ -214,6 +220,7 @@ function CityDetailPage() {
     setSegmentEnd('');
     setRouteLinkedId('');
     setRouteLicenseCategory('B');
+    setRouteRequiresSpecialPermissions(false);
     setIsRouteModalOpen(true);
   };
 
@@ -241,6 +248,7 @@ function CityDetailPage() {
     setSegmentEnd('');
     setRouteLinkedId(rt.linked_route_id || '');
     setRouteLicenseCategory(rt.required_license_category || 'B');
+    setRouteRequiresSpecialPermissions(!!rt.requires_special_permissions);
     setIsRouteModalOpen(true);
   };
 
@@ -273,6 +281,7 @@ function CityDetailPage() {
       working_hours: { segments },
       linked_route_id: routeLinkedId || null,
       required_license_category: routeLicenseCategory || 'B',
+      requires_special_permissions: routeRequiresSpecialPermissions,
     };
     logRouteLicense('3. wysyłam do API', routeData);
     try {
@@ -375,6 +384,7 @@ function CityDetailPage() {
                 <th>Nazwisko</th>
                 <th>Część etatu</th>
                 <th>Prawo jazdy</th>
+                <th>Spec. upr.</th>
                 <th>Miasto</th>
                 <th>Akcje</th>
               </tr>
@@ -387,6 +397,7 @@ function CityDetailPage() {
                   <td>{emp.last_name}</td>
                   <td>{emp.part_time}</td>
                   <td>{emp.license_category ? LICENSE_CATEGORY_LABELS[emp.license_category] || emp.license_category : '—'}</td>
+                  <td>{formatYesNo(emp.special_permissions)}</td>
                   <td>
                     {allCities.find(c => c.id.toString() === emp.city_id.toString())?.name || emp.city_id}
                   </td>
@@ -413,6 +424,7 @@ function CityDetailPage() {
                 <th>ID</th>
                 <th>Nazwa</th>
                 <th>Wym. kat.</th>
+                <th>Spec. upr.</th>
                 <th>Godziny pracy</th>
                 <th>Trasa powiązana</th>
                 <th>Dodatkowe miasto</th>
@@ -425,6 +437,7 @@ function CityDetailPage() {
                   <td>{rt.id}</td>
                   <td>{rt.name}</td>
                   <td>{rt.required_license_category || 'B'}</td>
+                  <td>{formatYesNo(rt.requires_special_permissions)}</td>
                   <td>
                     {(() => {
                       // Jeśli working_hours jest stringiem, spróbuj sparsować
@@ -495,6 +508,16 @@ function CityDetailPage() {
               ))}
             </select>
           </div>
+          <div>
+            <label>
+              <input
+                type="checkbox"
+                checked={empSpecialPermissions}
+                onChange={(e) => setEmpSpecialPermissions(e.target.checked)}
+              />
+              {' '}Specjalne uprawnienia
+            </label>
+          </div>
           <button
             type="submit"
             className="btn-primary"
@@ -552,6 +575,16 @@ function CityDetailPage() {
                 <option key={cat} value={cat}>{LICENSE_CATEGORY_LABELS[cat]}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label>
+              <input
+                type="checkbox"
+                checked={routeRequiresSpecialPermissions}
+                onChange={(e) => setRouteRequiresSpecialPermissions(e.target.checked)}
+              />
+              {' '}Wymaga specjalnych uprawnień
+            </label>
           </div>
           <div>
             <label>Trasa powiązana:</label>

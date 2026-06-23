@@ -2,6 +2,7 @@
 const { Schedule, Employee, Route } = require('../models');
 const { Op } = require('sequelize');
 const { canDriveWithCategory } = require('../utils/licenseCategories');
+const { canAssignEmployeeToRoute } = require('../utils/routeAssignment');
 
 /**
  * PUT /api/schedule/update-cell
@@ -31,11 +32,16 @@ exports.updateScheduleCell = async (req, res) => {
       if (!route) {
         return res.status(400).json({ message: 'Trasa nie znaleziona.' });
       }
-      if (!canDriveWithCategory(employee.license_category, route.required_license_category)) {
+      if (!canAssignEmployeeToRoute(employee, route)) {
         const reqCat = route.required_license_category || 'B';
         const empCat = employee.license_category || 'brak';
+        if (!canDriveWithCategory(employee.license_category, route.required_license_category)) {
+          return res.status(400).json({
+            message: `Kategoria prawa jazdy nie pasuje: trasa wymaga ${reqCat}, pracownik ma ${empCat}.`,
+          });
+        }
         return res.status(400).json({
-          message: `Kategoria prawa jazdy nie pasuje: trasa wymaga ${reqCat}, pracownik ma ${empCat}.`,
+          message: 'Trasa wymaga specjalnych uprawnień, których ten pracownik nie posiada.',
         });
       }
     }

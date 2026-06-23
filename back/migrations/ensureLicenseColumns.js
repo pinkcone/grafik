@@ -25,6 +25,24 @@ async function ensureLicenseColumns(sequelize) {
       comment: 'Wymagana kategoria prawa jazdy na trasie',
     });
   }
+
+  if (employees && !employees.special_permissions) {
+    await qi.addColumn('employees', 'special_permissions', {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: 'Czy pracownik posiada specjalne uprawnienia',
+    });
+  }
+
+  if (routes && !routes.requires_special_permissions) {
+    await qi.addColumn('routes', 'requires_special_permissions', {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: 'Czy trasa wymaga specjalnych uprawnień pracownika',
+    });
+  }
 }
 
 module.exports = { ensureLicenseColumns };

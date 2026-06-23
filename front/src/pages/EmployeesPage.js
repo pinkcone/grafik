@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Popup from '../components/Popup';
 import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
+import { formatYesNo } from '../utils/routeAssignment';
 import { logEmployeeLicense } from '../utils/licenseLog';
 
 function EmployeesPage() {
@@ -17,6 +18,7 @@ function EmployeesPage() {
   const [partTime, setPartTime] = useState(1);
   const [cityId, setCityId] = useState('');
   const [licenseCategory, setLicenseCategory] = useState('');
+  const [specialPermissions, setSpecialPermissions] = useState(false);
 
   useEffect(() => {
     fetchEmployees();
@@ -56,6 +58,7 @@ function EmployeesPage() {
     setPartTime(1);
     setCityId('');
     setLicenseCategory('');
+    setSpecialPermissions(false);
     setIsPopupOpen(true);
   };
 
@@ -68,6 +71,7 @@ function EmployeesPage() {
     setPartTime(emp.part_time);
     setCityId(String(emp.city_id ?? ''));
     setLicenseCategory(emp.license_category || '');
+    setSpecialPermissions(!!emp.special_permissions);
     setIsPopupOpen(true);
   };
 
@@ -101,6 +105,7 @@ function EmployeesPage() {
       part_time: partTime,
       city_id: cityId,
       license_category: licenseCategory || null,
+      special_permissions: specialPermissions,
     };
     logEmployeeLicense('3. wysyłam do API', employeeData);
 
@@ -149,6 +154,7 @@ function EmployeesPage() {
             <th onClick={() => sortData('part_time')}>Część etatu</th>
             <th onClick={() => sortData('city_id')}>ID Miasta</th>
             <th onClick={() => sortData('license_category')}>Prawo jazdy</th>
+            <th onClick={() => sortData('special_permissions')}>Spec. upr.</th>
             <th>Akcje</th>
           </tr>
         </thead>
@@ -161,6 +167,7 @@ function EmployeesPage() {
               <td>{emp.part_time}</td>
               <td>{emp.city_id}</td>
               <td>{emp.license_category ? LICENSE_CATEGORY_LABELS[emp.license_category] || emp.license_category : '—'}</td>
+              <td>{formatYesNo(emp.special_permissions)}</td>
               <td className="table-actions">
                 <button type="button" className="btn-sm" onClick={() => handleEditEmployeeClick(emp)}>Edytuj</button>
                 <button type="button" className="btn-sm btn-danger" onClick={() => handleDeleteEmployee(emp.id)}>Usuń</button>
@@ -203,6 +210,16 @@ function EmployeesPage() {
                 <option key={cat} value={cat}>{LICENSE_CATEGORY_LABELS[cat]}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label>
+              <input
+                type="checkbox"
+                checked={specialPermissions}
+                onChange={(e) => setSpecialPermissions(e.target.checked)}
+              />
+              {' '}Specjalne uprawnienia
+            </label>
           </div>
           <button
             type="submit"

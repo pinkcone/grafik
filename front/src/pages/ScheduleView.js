@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { decorateWorksheet } from './elements/decorateWorksheet';
-import { canDriveWithCategory } from '../utils/licenseCategories';
+import { canAssignEmployeeToRoute } from '../utils/routeAssignment';
 import '../styles/ScheduleView.css';
 import '../styles/ScheduleDayMenu.css';
 
@@ -288,12 +288,12 @@ function ScheduleView({ cityId }) {
 
     const availableRoutes = routes.filter(r => {
       if (assignedRouteIds.includes(r.id.toString())) return false;
-      return canDriveWithCategory(employee?.license_category, r.required_license_category || 'B');
+      return canAssignEmployeeToRoute(employee, r);
     });
 
     const routeOptions = availableRoutes.map(r => ({
       value: `R:${r.id}`,
-      label: `${r.name} (${calculateDuration(r).toFixed(2)}h) [${r.required_license_category || 'B'}]`
+      label: `${r.name} (${calculateDuration(r).toFixed(2)}h) [${r.required_license_category || 'B'}]${r.requires_special_permissions ? ' [SP]' : ''}`
     }));
 
     const labelOptions = labels.map(l => ({
@@ -725,7 +725,9 @@ const prepareRoutesSheet = () => {
     );
 
     const route = routes.find(r => r.id.toString() === routeId.toString());
-    const requiredLicense = route?.required_license_category || 'B';
+    if (!route) {
+      return [{ value: '', label: '-- brak --' }];
+    }
 
     return [
       { value: "", label: "-- brak --" },
@@ -733,7 +735,7 @@ const prepareRoutesSheet = () => {
         .filter(emp => {
           const empId = emp.id.toString();
 
-          if (!canDriveWithCategory(emp.license_category, requiredLicense)) return false;
+          if (!canAssignEmployeeToRoute(emp, route)) return false;
 
           // Jeśli pracownik jest już na którejś trasie z pary → dopuść (żeby móc edytować)
           for (const rid of pairIds) {
@@ -745,7 +747,7 @@ const prepareRoutesSheet = () => {
         })
         .map(emp => ({
           value: emp.id,
-          label: `${emp.first_name} ${emp.last_name}${emp.license_category ? ` [${emp.license_category}]` : ''}`
+          label: `${emp.first_name} ${emp.last_name}${emp.license_category ? ` [${emp.license_category}]` : ''}${emp.special_permissions ? ' [SP]' : ''}`
         }))
     ];
   };

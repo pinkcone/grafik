@@ -24,6 +24,12 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       comment: 'Najwyższa kategoria prawa jazdy pracownika (C uprawnia też do B)',
     },
+    special_permissions: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: 'Czy pracownik posiada specjalne uprawnienia',
+    },
     // Klucz do miasta (dla przykładu)
     city_id: {
       type: DataTypes.INTEGER,

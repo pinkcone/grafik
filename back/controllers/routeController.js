@@ -1,8 +1,9 @@
 const { Route } = require('../models');
+const { toBoolean } = require('../utils/routeAssignment');
 
 exports.createRoute = async (req, res) => {
   try {
-    const { name, main_city_id, additional_city_id, working_hours, linked_route_id, required_license_category } = req.body;
+    const { name, main_city_id, additional_city_id, working_hours, linked_route_id, required_license_category, requires_special_permissions } = req.body;
     const user_id = req.user.id;
     const route = await Route.create({
       name,
@@ -11,6 +12,7 @@ exports.createRoute = async (req, res) => {
       working_hours,
       linked_route_id,
       required_license_category: required_license_category || 'B',
+      requires_special_permissions: toBoolean(requires_special_permissions),
       user_id,
     });
     res.status(201).json({ message: 'Trasa utworzona', route });
@@ -34,7 +36,7 @@ exports.getRoutesByCity = async (req, res) => {
 exports.updateRoute = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, main_city_id, additional_city_id, working_hours, linked_route_id, required_license_category } = req.body;
+    const { name, main_city_id, additional_city_id, working_hours, linked_route_id, required_license_category, requires_special_permissions } = req.body;
     const user_id = req.user.id;
     const route = await Route.findOne({ where: { id, user_id } });
     if (!route) return res.status(404).json({ error: 'Trasa nie znaleziona' });
@@ -45,6 +47,7 @@ exports.updateRoute = async (req, res) => {
       working_hours,
       linked_route_id,
       required_license_category: required_license_category || 'B',
+      requires_special_permissions: toBoolean(requires_special_permissions),
     });
     res.json({ message: 'Trasa zaktualizowana', route });
   } catch (error) {

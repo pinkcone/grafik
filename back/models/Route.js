@@ -29,6 +29,12 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: 'B',
       comment: 'Wymagana kategoria prawa jazdy na trasie (bus = B, ciężarówka = C)',
     },
+    requires_special_permissions: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: 'Czy trasa wymaga specjalnych uprawnień pracownika',
+    },
     linked_route_id: {
       type: DataTypes.INTEGER,
       allowNull: true,
