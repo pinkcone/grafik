@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
@@ -27,6 +27,7 @@ function ScheduleView({ cityId }) {
 
   const employeesTableRef = useRef(null);
   const routesTableRef = useRef(null);
+  const dayMenuDropdownRef = useRef(null);
 
   const [openDayMenu, setOpenDayMenu] = useState(null);
 
@@ -80,6 +81,14 @@ function ScheduleView({ cityId }) {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openDayMenu]);
+
+  useLayoutEffect(() => {
+    const el = dayMenuDropdownRef.current;
+    if (!el) return;
+    el.classList.add('schedule-day-menu__dropdown--wide');
+    const naturalWidth = el.scrollWidth;
+    el.classList.toggle('schedule-day-menu__dropdown--wide', naturalWidth > 150);
   }, [openDayMenu]);
 
   const fetchEmployees = async () => {
@@ -755,6 +764,14 @@ const prepareRoutesSheet = () => {
     return { value: "", label: "-- brak --" };
   };
 
+  const openDayMenuFor = (day, triggerEl) => {
+    const rect = triggerEl.getBoundingClientRect();
+    setOpenDayMenu((prev) => {
+      if (prev?.day === day) return null;
+      return { day, top: rect.bottom + 4, left: rect.right };
+    });
+  };
+
   const renderDayHeader = (day) => {
     const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const weekday = new Date(date).getDay();
@@ -775,18 +792,10 @@ const prepareRoutesSheet = () => {
               title="Opcje dnia"
               aria-label={`Opcje dnia ${day}`}
               aria-expanded={isOpen}
-              onClick={(e) => {
+              onMouseDown={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
-                if (isOpen) {
-                  setOpenDayMenu(null);
-                  return;
-                }
-                const rect = e.currentTarget.getBoundingClientRect();
-                setOpenDayMenu({
-                  day,
-                  top: rect.bottom + 4,
-                  left: rect.right,
-                });
+                openDayMenuFor(day, e.currentTarget);
               }}
             >
               ⋮
@@ -799,6 +808,7 @@ const prepareRoutesSheet = () => {
 
   const dayMenuPortal = openDayMenu && createPortal(
     <div
+      ref={dayMenuDropdownRef}
       className="schedule-day-menu__dropdown schedule-day-menu__dropdown--fixed"
       style={{ top: openDayMenu.top, left: openDayMenu.left }}
       role="menu"

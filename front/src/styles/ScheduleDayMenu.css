@@ -49,12 +49,21 @@
   top: calc(100% + 4px);
   right: 0;
   z-index: 50;
-  min-width: 150px;
+  display: inline-flex;
+  flex-direction: column;
+  width: max-content;
+  max-width: 150px;
   padding: 4px;
   background: #fff;
   border: 1px solid #000;
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-sizing: border-box;
+}
+
+/* Dłuższe pozycje menu — dodaj klasę na dropdown */
+.schedule-day-menu__dropdown--wide {
+  max-width: none;
 }
 
 .schedule-day-menu__dropdown--fixed {
@@ -67,7 +76,7 @@
 
 .schedule-day-menu__item {
   display: block;
-  width: 100%;
+  width: auto;
   padding: 7px 10px;
   margin: 0;
   border: none;
