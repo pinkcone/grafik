@@ -162,7 +162,8 @@ function CityDetailPage() {
         fetchEmployees();
         setIsEmployeeModalOpen(false);
       } else {
-        alert('Błąd przy zapisie pracownika');
+        const err = await res.json().catch(() => ({}));
+        alert(err.details || err.error || 'Błąd przy zapisie pracownika');
       }
     } catch (error) {
       console.error(error);

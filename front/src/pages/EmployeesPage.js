@@ -112,7 +112,8 @@ function EmployeesPage() {
           fetchEmployees();
           setIsPopupOpen(false);
         } else {
-          alert('Błąd przy dodawaniu pracownika');
+          const err = await res.json().catch(() => ({}));
+          alert(err.details || err.error || 'Błąd przy dodawaniu pracownika');
         }
       } catch (error) {
         console.error(error);
@@ -131,7 +132,8 @@ function EmployeesPage() {
           fetchEmployees();
           setIsPopupOpen(false);
         } else {
-          alert('Błąd przy edycji pracownika');
+          const err = await res.json().catch(() => ({}));
+          alert(err.details || err.error || 'Błąd przy edycji pracownika');
         }
       } catch (error) {
         console.error(error);

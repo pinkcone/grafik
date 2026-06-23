@@ -10,6 +10,9 @@ echo "==> Git pull"
 git fetch origin main
 git reset --hard origin/main
 
+echo "==> Backup bazy danych (przed zmianami w aplikacji)"
+bash scripts/backup-db.sh
+
 echo "==> Backend: npm ci"
 cd back
 npm ci --omit=dev

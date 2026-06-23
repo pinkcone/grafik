@@ -7,6 +7,8 @@ router.use(auth);
 
 // Tworzenie pracownika
 router.post('/', employeeController.createEmployee);
+// Wszyscy pracownicy użytkownika
+router.get('/', employeeController.getEmployees);
 // Pobieranie pracowników dla danego miasta (przekazywany parametr cityId)
 router.get('/city/:cityId', employeeController.getEmployeesByCity);
 // Edycja i usuwanie pracownika (identyfikacja po id)

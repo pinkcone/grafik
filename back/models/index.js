@@ -64,7 +64,10 @@ Route.belongsTo(Route, { foreignKey: 'linked_route_id', as: 'linkedRoute' });
 Route.hasOne(Route, { foreignKey: 'linked_route_id', as: 'parentRoute' });
 
 // Synchronizacja modeli (utworzenie lub modyfikacja tabel)
+const { ensureLicenseColumns } = require('../migrations/ensureLicenseColumns');
+
 sequelize.sync({ alter: true })
+  .then(() => ensureLicenseColumns(sequelize))
   .then(() => {
     console.log('Tabele zostały utworzone/synchronizowane w bazie danych.');
   })

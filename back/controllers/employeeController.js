@@ -18,6 +18,16 @@ exports.createEmployee = async (req, res) => {
   }
 };
 
+exports.getEmployees = async (req, res) => {
+  try {
+    const user_id = req.user.id;
+    const employees = await Employee.findAll({ where: { user_id } });
+    res.json(employees);
+  } catch (error) {
+    res.status(500).json({ error: 'Błąd przy pobieraniu pracowników', details: error.message });
+  }
+};
+
 exports.getEmployeesByCity = async (req, res) => {
   try {
     const { cityId } = req.params;
@@ -43,6 +53,7 @@ exports.updateEmployee = async (req, res) => {
       city_id,
       license_category: license_category || null,
     });
+    await employee.reload();
     res.json({ message: 'Pracownik zaktualizowany', employee });
   } catch (error) {
     res.status(500).json({ error: 'Błąd przy aktualizacji pracownika', details: error.message });
