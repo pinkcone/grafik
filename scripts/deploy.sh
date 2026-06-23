@@ -42,7 +42,12 @@ pm2 save
 echo "==> Weryfikacja: nowy backend musi znać trasę /api/employees"
 sleep 2
 CODE="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5000/api/employees || echo 000)"
-echo "GET /api/employees -> HTTP $CODE (oczekiwane 401 = nowy kod działa; 404 = nadal stary)"
+echo "GET /api/employees -> HTTP $CODE (401=OK, 000=backend nie działa, 404=stary kod)"
+if [ "$CODE" = "000" ]; then
+  echo "::error::Backend nie odpowiada na :5000 — sprawdź pm2 logs i back/.env"
+  pm2 logs grafik-api --lines 30 --nostream || true
+  exit 1
+fi
 if [ "$CODE" = "404" ]; then
   echo "::error::Backend nadal serwuje STARY kod (trasa /api/employees zwraca 404)"
   pm2 logs grafik-api --lines 30 --nostream || true

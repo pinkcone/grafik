@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-
+const { normalizeEnvKeys } = require('./back/envNormalize');
 /** Wczytaj back/.env do env PM2 — inaczej po pm2 restart zostają tylko domyślne root/'' */
 function loadBackEnv() {
   const envPath = path.join(__dirname, 'back', '.env');
@@ -17,8 +17,8 @@ function loadBackEnv() {
     if (!trimmed || trimmed.startsWith('#')) continue;
     const eq = trimmed.indexOf('=');
     if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let val = trimmed.slice(eq + 1).trim();
+    const key = trimmed.slice(0, eq).trim().replace(/\r$/, '');
+    let val = trimmed.slice(eq + 1).trim().replace(/\r$/, '');
     if (
       (val.startsWith('"') && val.endsWith('"')) ||
       (val.startsWith("'") && val.endsWith("'"))
@@ -31,7 +31,7 @@ function loadBackEnv() {
   return vars;
 }
 
-const envFromFile = loadBackEnv();
+const envFromFile = normalizeEnvKeys(loadBackEnv());
 
 module.exports = {
   apps: [
@@ -40,6 +40,7 @@ module.exports = {
       cwd: './back',
       script: 'server.js',
       instances: 1,
+      exec_mode: 'fork',
       autorestart: true,
       max_memory_restart: '300M',
       env_production: {
