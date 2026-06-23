@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { decorateWorksheet } from './elements/decorateWorksheet';
 import { canDriveWithCategory } from '../utils/licenseCategories';
 import '../styles/ScheduleView.css';
+import '../styles/ScheduleDayMenu.css';
 
 const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
 
@@ -25,6 +27,8 @@ function ScheduleView({ cityId }) {
 
   const employeesTableRef = useRef(null);
   const routesTableRef = useRef(null);
+
+  const [openDayMenu, setOpenDayMenu] = useState(null);
 
   const [quarterSchedules, setQuarterSchedules] = useState({});
 
@@ -59,6 +63,24 @@ function ScheduleView({ cityId }) {
     fetchQuarterSchedules();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityId, month, year]);
+
+  useEffect(() => {
+    setOpenDayMenu(null);
+  }, [month, year, viewType]);
+
+  useEffect(() => {
+    if (openDayMenu == null) return;
+    const handleClickOutside = (e) => {
+      if (
+        !e.target.closest('.schedule-day-menu') &&
+        !e.target.closest('.schedule-day-menu__dropdown--fixed')
+      ) {
+        setOpenDayMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openDayMenu]);
 
   const fetchEmployees = async () => {
     try {
@@ -346,28 +368,59 @@ function ScheduleView({ cityId }) {
   };
 
   // Usuń pojedynczy wpis (bez ruszania bliźniaczej trasy)
+  const removeScheduleEntry = async (scheduleId) => {
+    if (!scheduleId) return;
+
+    const res = await fetch(`/api/schedule/${scheduleId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` },
+      cache: 'no-store'
+    });
+    if (!res.ok && res.status !== 204) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const data = await res.json();
+        msg = data.message || data.error || msg;
+      } catch { }
+      throw new Error(msg);
+    }
+  };
+
   const deleteSchedule = async (scheduleId) => {
     try {
-      if (!scheduleId) return;
-
-      const res = await fetch(`/api/schedule/${scheduleId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
-        cache: 'no-store'
-      });
-      if (!res.ok && res.status !== 204) {
-        let msg = `HTTP ${res.status}`;
-        try {
-          const data = await res.json();
-          msg = data.message || msg;
-        } catch { }
-        throw new Error(msg);
-      }
-
+      await removeScheduleEntry(scheduleId);
       await fetchSchedule();
       await fetchQuarterSchedules();
     } catch (e) {
       alert(`Nie udało się usunąć wpisu: ${e.message || e}`);
+    }
+  };
+
+  const clearDay = async (day) => {
+    const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const entries = schedules.filter(s => s.date === date);
+
+    if (entries.length === 0) {
+      alert('Brak wpisów w tym dniu.');
+      setOpenDayMenu(null);
+      return;
+    }
+
+    const ok = window.confirm(
+      `Wyczyścić dzień ${day}.${month}.${year}?\nUsunie ${entries.length} wpis(ów) z grafiku.`
+    );
+    if (!ok) return;
+
+    setOpenDayMenu(null);
+
+    try {
+      await Promise.all(entries.map(e => removeScheduleEntry(e.id)));
+      await fetchSchedule();
+      await fetchQuarterSchedules();
+    } catch (e) {
+      alert(`Nie udało się wyczyścić dnia: ${e.message || e}`);
+      await fetchSchedule();
+      await fetchQuarterSchedules();
     }
   };
 
@@ -702,6 +755,66 @@ const prepareRoutesSheet = () => {
     return { value: "", label: "-- brak --" };
   };
 
+  const renderDayHeader = (day) => {
+    const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const weekday = new Date(date).getDay();
+    let bgColor = '';
+    if (weekday === 0) bgColor = 'red';
+    else if (weekday === 6) bgColor = 'gray';
+
+    const isOpen = openDayMenu?.day === day;
+
+    return (
+      <th key={day} style={{ backgroundColor: bgColor }}>
+        <div className="schedule-day-header">
+          <span className="schedule-day-header__num">{day}</span>
+          <div className="schedule-day-menu">
+            <button
+              type="button"
+              className="schedule-day-menu__trigger"
+              title="Opcje dnia"
+              aria-label={`Opcje dnia ${day}`}
+              aria-expanded={isOpen}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isOpen) {
+                  setOpenDayMenu(null);
+                  return;
+                }
+                const rect = e.currentTarget.getBoundingClientRect();
+                setOpenDayMenu({
+                  day,
+                  top: rect.bottom + 4,
+                  left: rect.right,
+                });
+              }}
+            >
+              ⋮
+            </button>
+          </div>
+        </div>
+      </th>
+    );
+  };
+
+  const dayMenuPortal = openDayMenu && createPortal(
+    <div
+      className="schedule-day-menu__dropdown schedule-day-menu__dropdown--fixed"
+      style={{ top: openDayMenu.top, left: openDayMenu.left }}
+      role="menu"
+    >
+      <button
+        type="button"
+        className="schedule-day-menu__item schedule-day-menu__item--danger"
+        role="menuitem"
+        onClick={() => clearDay(openDayMenu.day)}
+      >
+        Wyczyść dzień
+      </button>
+    </div>,
+    document.body
+  );
+
   return (
     <div>
       <h2>Ułóż grafik – Widok: {viewType === 'employees' ? "wg Pracowników" : "wg Tras"}</h2>
@@ -753,14 +866,7 @@ const prepareRoutesSheet = () => {
             <thead>
               <tr>
                 <th>Pracownik</th>
-                {days.map(day => {
-                  const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                  const weekday = new Date(date).getDay();
-                  let bgColor = '';
-                  if (weekday === 0) bgColor = 'red';
-                  else if (weekday === 6) bgColor = 'gray';
-                  return <th key={day} style={{ backgroundColor: bgColor }}>{day}</th>;
-                })}
+                {days.map(day => renderDayHeader(day))}
                 <th>Godziny miesiąc</th>
                 <th>Godziny kwartał</th>
               </tr>
@@ -836,14 +942,7 @@ const prepareRoutesSheet = () => {
             <thead>
               <tr>
                 <th>Trasa</th>
-                {days.map(day => {
-                  const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                  const weekday = new Date(date).getDay();
-                  let bgColor = '';
-                  if (weekday === 0) bgColor = 'red';
-                  else if (weekday === 6) bgColor = 'gray';
-                  return <th key={day} style={{ backgroundColor: bgColor }}>{day}</th>;
-                })}
+                {days.map(day => renderDayHeader(day))}
               </tr>
             </thead>
             <tbody>
@@ -888,6 +987,7 @@ const prepareRoutesSheet = () => {
           </table>
         </div>
       )}
+      {dayMenuPortal}
     </div>
   );
 }
