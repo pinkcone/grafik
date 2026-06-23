@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import Popup from '../components/Popup';
 import ScheduleView from './ScheduleView';
 import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
-import { debugLog } from '../utils/debugLog';
+import { logLicense } from '../utils/licenseLog';
 
 
 function CityDetailPage() {
@@ -61,7 +61,7 @@ function CityDetailPage() {
       const data = await res.json();
       setCity(data);
     } catch (error) {
-      console.error('Błąd pobierania miasta:', error);
+      // ignore
     }
   };
 
@@ -74,7 +74,7 @@ function CityDetailPage() {
       const data = await res.json();
       setEmployees(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error('Błąd pobierania pracowników:', error);
+      // ignore
     }
   };
 
@@ -85,12 +85,11 @@ function CityDetailPage() {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
-      console.log("Fetched routes data:", data); // Debug – sprawdzamy strukturę tras
       setRoutes(Array.isArray(data) ? data : []);
       // Do selectu powiązanej trasy wykorzystujemy trasy z tego miasta
       setCityRoutes(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error('Błąd pobierania tras:', error);
+      // ignore
     }
   };
 
@@ -103,7 +102,7 @@ function CityDetailPage() {
       const data = await res.json();
       setAllCities(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error('Błąd pobierania listy miast:', error);
+      // ignore
     }
   };
 
@@ -113,21 +112,27 @@ function CityDetailPage() {
     setEmpFirstName('');
     setEmpLastName('');
     setEmpPartTime(1);
-    setEmpCityId(cityId); // domyślnie aktualne miasto
+    setEmpCityId(String(cityId)); // domyślnie aktualne miasto
     setEmpLicenseCategory('');
     setIsEmployeeModalOpen(true);
   };
 
   const openEmployeeModalForEdit = (emp) => {
-    debugLog('edycja pracownika z API:', { id: emp.id, license_category: emp.license_category, emp });
+    logLicense('1. otwarcie edycji', { id: emp.id, license_category_z_bazy: emp.license_category ?? null });
     setEmployeeModalMode('edit');
     setCurrentEmployee(emp);
     setEmpFirstName(emp.first_name);
     setEmpLastName(emp.last_name);
     setEmpPartTime(emp.part_time);
-    setEmpCityId(emp.city_id);
+    setEmpCityId(String(emp.city_id ?? cityId));
     setEmpLicenseCategory(emp.license_category || '');
     setIsEmployeeModalOpen(true);
+  };
+
+  const handleLicenseCategoryChange = (e) => {
+    const value = e.target.value;
+    logLicense('2. wybrano kategorię w select', { wartosc: value || null });
+    setEmpLicenseCategory(value);
   };
 
   const handleEmployeeSubmit = async (e) => {
@@ -139,7 +144,7 @@ function CityDetailPage() {
       city_id: empCityId,
       license_category: empLicenseCategory || null,
     };
-    debugLog('zapis pracownika', { mode: employeeModalMode, empLicenseCategory, employeeData });
+    logLicense('3. wysyłam do API', employeeData);
     try {
       let res;
       if (employeeModalMode === 'add') {
@@ -163,17 +168,19 @@ function CityDetailPage() {
       }
       if (res.ok) {
         const saved = await res.json();
-        debugLog('zapis OK', saved);
-        debugLog('license_category w odpowiedzi:', saved.employee?.license_category);
+        logLicense('4. odpowiedź API OK', {
+          license_category: saved.employee?.license_category ?? null,
+          caly_pracownik: saved.employee,
+        });
         fetchEmployees();
         setIsEmployeeModalOpen(false);
       } else {
         const err = await res.json().catch(() => ({}));
-        debugLog('zapis BŁĄD', { status: res.status, err });
+        logLicense('4. odpowiedź API BŁĄD', { status: res.status, ...err });
         alert(err.details || err.error || 'Błąd przy zapisie pracownika');
       }
     } catch (error) {
-      console.error(error);
+      logLicense('4. wyjątek sieci', { message: error.message });
     }
   };
 
@@ -190,7 +197,7 @@ function CityDetailPage() {
         alert('Błąd przy usuwaniu pracownika');
       }
     } catch (error) {
-      console.error(error);
+      // ignore
     }
   };
 
@@ -219,10 +226,9 @@ function CityDetailPage() {
         const parsed = typeof rt.working_hours === "string" ? JSON.parse(rt.working_hours) : rt.working_hours;
         segmentsFromData = Array.isArray(parsed.segments) ? parsed.segments : [];
       } catch (e) {
-        console.error("Błąd parsowania working_hours:", e);
+        // ignore
       }
     }
-    console.log(`Editing route ${rt.id}, segments:`, segmentsFromData);
     setSegments(segmentsFromData);
     setSegmentStart('');
     setSegmentEnd('');
@@ -283,7 +289,7 @@ function CityDetailPage() {
         alert('Błąd przy zapisie trasy');
       }
     } catch (error) {
-      console.error(error);
+      // ignore
     }
   };
 
@@ -300,7 +306,7 @@ function CityDetailPage() {
         alert('Błąd przy usuwaniu trasy');
       }
     } catch (error) {
-      console.error(error);
+      // ignore
     }
   };
 
@@ -383,10 +389,9 @@ function CityDetailPage() {
                       if (typeof wh === "string") {
                         try {
                           wh = JSON.parse(wh);
-                        } catch (e) {
-                          console.error("Błąd parsowania working_hours:", e);
-                          return "-";
-                        }
+        } catch (e) {
+          return "-";
+        }
                       }
                       return wh && Array.isArray(wh.segments) && wh.segments.length > 0
                         ? wh.segments.map(seg => `${seg.start}-${seg.end}`).join(', ')
@@ -432,22 +437,27 @@ function CityDetailPage() {
           </div>
           <div>
             <label>Miasto:</label>
-            <select value={empCityId} onChange={(e) => setEmpCityId(e.target.value)} required>
+            <select value={String(empCityId)} onChange={(e) => setEmpCityId(e.target.value)} required>
               {allCities.map(city => (
-                <option key={city.id} value={city.id}>{city.name}</option>
+                <option key={city.id} value={String(city.id)}>{city.name}</option>
               ))}
             </select>
           </div>
           <div>
             <label>Kategoria prawa jazdy:</label>
-            <select value={empLicenseCategory} onChange={(e) => setEmpLicenseCategory(e.target.value)}>
+            <select value={empLicenseCategory} onChange={handleLicenseCategoryChange}>
               <option value="">— nie ustawiono —</option>
               {LICENSE_CATEGORIES.map((cat) => (
                 <option key={cat} value={cat}>{LICENSE_CATEGORY_LABELS[cat]}</option>
               ))}
             </select>
           </div>
-          <button type="submit">{employeeModalMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}</button>
+          <button
+            type="submit"
+            onClick={() => logLicense('2b. kliknięto przycisk Zapisz', { kategoria: empLicenseCategory || null })}
+          >
+            {employeeModalMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}
+          </button>
         </form>
       </Popup>
 

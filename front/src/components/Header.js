@@ -20,7 +20,6 @@ function Header({ onLogout }) {
         initials = userName[0]?.toUpperCase() || 'U';
       }
     } catch (error) {
-      console.error('Błąd dekodowania tokena:', error);
       userName = 'użytkowniku';
     }
   }

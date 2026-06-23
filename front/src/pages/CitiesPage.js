@@ -29,13 +29,12 @@ function CitiesPage() {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       });
       if (!res.ok) {
-        console.error('Błąd pobierania miast:', res.status);
         return;
       }
       const data = await res.json();
       setCities(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error('Error fetching cities:', error);
+      // ignore
     }
   };
 
@@ -80,7 +79,7 @@ function CitiesPage() {
         alert('Błąd przy usuwaniu miasta');
       }
     } catch (error) {
-      console.error(error);
+      // ignore
     }
   };
 
@@ -112,7 +111,7 @@ function CitiesPage() {
       await fetchCities();
       setIsFormOpen(false);
     } catch (error) {
-      console.error(error);
+      // ignore
     }
   };
 

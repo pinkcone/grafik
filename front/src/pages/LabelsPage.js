@@ -28,7 +28,7 @@ function LabelsPage() {
       // Zakładamy, że API zwraca tablicę etykiet
       setLabels(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error("Błąd pobierania etykiet:", error);
+      // ignore
     }
   };
 
@@ -84,7 +84,7 @@ function LabelsPage() {
         alert("Błąd przy zapisie etykiety");
       }
     } catch (error) {
-      console.error("Błąd przy zapisie etykiety:", error);
+      // ignore
     }
   };
 
@@ -101,7 +101,7 @@ function LabelsPage() {
         alert("Błąd przy usuwaniu etykiety");
       }
     } catch (error) {
-      console.error("Błąd przy usuwaniu etykiety:", error);
+      // ignore
     }
   };
 

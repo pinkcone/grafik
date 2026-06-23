@@ -42,7 +42,6 @@ function ScheduleView({ cityId }) {
         const data = await res.json();
         return [m, Array.isArray(data) ? data : []];
       } catch (e) {
-        console.error("Error fetching quarter schedule for month", m, e);
         return [m, []];
       }
     }));
@@ -70,7 +69,7 @@ function ScheduleView({ cityId }) {
       const data = await res.json();
       setEmployees(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error("Error fetching employees:", error);
+      // ignore
     }
   };
 
@@ -96,7 +95,7 @@ function ScheduleView({ cityId }) {
         : [];
       setRoutes(filtered);
     } catch (error) {
-      console.error("Error fetching routes:", error);
+      // ignore
     }
   };
 
@@ -109,7 +108,7 @@ function ScheduleView({ cityId }) {
       const data = await res.json();
       setLabels(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error("Error fetching labels:", error);
+      // ignore
     }
   };
 
@@ -125,7 +124,7 @@ function ScheduleView({ cityId }) {
       const data = await res.json();
       setSchedules(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error("Error fetching schedule:", error);
+      // ignore
     }
   };
 
@@ -180,7 +179,6 @@ function ScheduleView({ cityId }) {
       await fetchSchedule();
       await fetchQuarterSchedules();
     } catch (error) {
-      console.error("Update schedule error (employee view):", error);
       alert(`Błąd aktualizacji grafiku: ${error.message}`);
     }
   };
@@ -243,7 +241,6 @@ function ScheduleView({ cityId }) {
       await fetchSchedule();
       await fetchQuarterSchedules();
     } catch (error) {
-      console.error("Update specific entry error:", error);
       alert(`Błąd aktualizacji wpisu: ${error.message}`);
     }
   };
@@ -370,7 +367,6 @@ function ScheduleView({ cityId }) {
       await fetchSchedule();
       await fetchQuarterSchedules();
     } catch (e) {
-      console.error('Delete schedule error:', e);
       alert(`Nie udało się usunąć wpisu: ${e.message || e}`);
     }
   };
@@ -413,7 +409,6 @@ function ScheduleView({ cityId }) {
       await fetchSchedule();
       await fetchQuarterSchedules();
     } catch (error) {
-      console.error("Update schedule error (route pair):", error);
       alert(`Błąd aktualizacji grafiku: ${error.message}`);
     }
   };
@@ -496,7 +491,6 @@ function ScheduleView({ cityId }) {
       try {
         wh = JSON.parse(wh);
       } catch (e) {
-        console.error("Error parsing working_hours:", e);
         return 0;
       }
     }

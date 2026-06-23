@@ -41,7 +41,7 @@ function RoutesPage() {
       const data = await res.json();
       setRoutes(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error('Error fetching routes:', error);
+      // ignore
     }
   };
 
@@ -54,7 +54,7 @@ function RoutesPage() {
       const data = await res.json();
       setCities(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error('Error fetching cities:', error);
+      // ignore
     }
   };
 
@@ -110,7 +110,7 @@ function RoutesPage() {
       if (res.ok) fetchRoutes();
       else alert('Błąd przy usuwaniu trasy');
     } catch (error) {
-      console.error(error);
+      // ignore
     }
   };
 
@@ -158,7 +158,7 @@ function RoutesPage() {
           alert('Błąd przy dodawaniu trasy');
         }
       } catch (error) {
-        console.error(error);
+        // ignore
       }
     } else if (popupMode === 'edit' && currentRoute) {
       try {
@@ -177,7 +177,7 @@ function RoutesPage() {
           alert('Błąd przy edycji trasy');
         }
       } catch (error) {
-        console.error(error);
+        // ignore
       }
     }
   };

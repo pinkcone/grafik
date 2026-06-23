@@ -10,7 +10,6 @@ function LoginPage() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
-    console.log("Submitting login with:", { email, password });
 
     try {
       const response = await fetch('/api/users/login', {
@@ -18,9 +17,7 @@ function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
-      console.log("Response status:", response.status);
       const data = await response.json();
-      console.log("Response data:", data);
 
       if (!response.ok) {
         setError(data.message || 'Błąd podczas logowania');
@@ -31,7 +28,6 @@ function LoginPage() {
         navigate('/');
       }
     } catch (err) {
-      console.error("Network error:", err);
       setError('Błąd sieciowy.');
     }
   };

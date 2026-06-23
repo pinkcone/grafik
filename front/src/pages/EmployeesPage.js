@@ -1,21 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import Popup from '../components/Popup';
 import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
-import { debugLog } from '../utils/debugLog';
-
-const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
+import { logLicense } from '../utils/licenseLog';
 
 function EmployeesPage() {
   const [employees, setEmployees] = useState([]);
   const [sortColumn, setSortColumn] = useState('id');
   const [sortOrder, setSortOrder] = useState('asc');
 
-  // Stany do obsługi popupu
   const [isPopupOpen, setIsPopupOpen] = useState(false);
-  const [popupMode, setPopupMode] = useState('add'); // 'add' lub 'edit'
+  const [popupMode, setPopupMode] = useState('add');
   const [currentEmployee, setCurrentEmployee] = useState(null);
 
-  // Pola formularza dla pracownika
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [partTime, setPartTime] = useState(1);
@@ -35,7 +31,7 @@ function EmployeesPage() {
       const data = await res.json();
       setEmployees(Array.isArray(data) ? data : []);
     } catch (error) {
-      console.error('Error fetching employees:', error);
+      // ignore
     }
   };
 
@@ -63,15 +59,21 @@ function EmployeesPage() {
   };
 
   const handleEditEmployeeClick = (emp) => {
-    debugLog('edycja pracownika z API:', { id: emp.id, license_category: emp.license_category, emp });
+    logLicense('1. otwarcie edycji', { id: emp.id, license_category_z_bazy: emp.license_category ?? null });
     setPopupMode('edit');
     setCurrentEmployee(emp);
     setFirstName(emp.first_name);
     setLastName(emp.last_name);
     setPartTime(emp.part_time);
-    setCityId(emp.city_id);
+    setCityId(String(emp.city_id ?? ''));
     setLicenseCategory(emp.license_category || '');
     setIsPopupOpen(true);
+  };
+
+  const handleLicenseCategoryChange = (e) => {
+    const value = e.target.value;
+    logLicense('2. wybrano kategorię w select', { wartosc: value || null });
+    setLicenseCategory(value);
   };
 
   const handleDeleteEmployee = async (id) => {
@@ -85,7 +87,7 @@ function EmployeesPage() {
       if (res.ok) fetchEmployees();
       else alert('Błąd przy usuwaniu pracownika');
     } catch (error) {
-      console.error(error);
+      // ignore
     }
   };
 
@@ -99,55 +101,35 @@ function EmployeesPage() {
       city_id: cityId,
       license_category: licenseCategory || null,
     };
-    debugLog('zapis pracownika', { mode: popupMode, licenseCategory, employeeData });
+    logLicense('3. wysyłam do API', employeeData);
 
-    if (popupMode === 'add') {
-      try {
-        const res = await fetch(`/api/employees`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify(employeeData),
+    const url = popupMode === 'add' ? `/api/employees` : `/api/employees/${currentEmployee.id}`;
+    const method = popupMode === 'add' ? 'POST' : 'PUT';
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(employeeData),
+      });
+      if (res.ok) {
+        const saved = await res.json();
+        logLicense('4. odpowiedź API OK', {
+          license_category: saved.employee?.license_category ?? null,
+          caly_pracownik: saved.employee,
         });
-        if (res.ok) {
-          const saved = await res.json();
-          debugLog('dodaj OK', saved);
-          fetchEmployees();
-          setIsPopupOpen(false);
-        } else {
-          const err = await res.json().catch(() => ({}));
-          debugLog('dodaj BŁĄD', { status: res.status, err });
-          alert(err.details || err.error || 'Błąd przy dodawaniu pracownika');
-        }
-      } catch (error) {
-        console.error(error);
+        fetchEmployees();
+        setIsPopupOpen(false);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        logLicense('4. odpowiedź API BŁĄD', { status: res.status, ...err });
+        alert(err.details || err.error || 'Błąd przy zapisie pracownika');
       }
-    } else if (popupMode === 'edit' && currentEmployee) {
-      try {
-        const res = await fetch(`/api/employees/${currentEmployee.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify(employeeData),
-        });
-        if (res.ok) {
-          const saved = await res.json();
-          debugLog('edycja OK', saved);
-          debugLog('license_category w odpowiedzi:', saved.employee?.license_category);
-          fetchEmployees();
-          setIsPopupOpen(false);
-        } else {
-          const err = await res.json().catch(() => ({}));
-          debugLog('edycja BŁĄD', { status: res.status, err });
-          alert(err.details || err.error || 'Błąd przy edycji pracownika');
-        }
-      } catch (error) {
-        console.error(error);
-      }
+    } catch (error) {
+      logLicense('4. wyjątek sieci', { message: error.message });
     }
   };
 
@@ -212,14 +194,19 @@ function EmployeesPage() {
           </div>
           <div>
             <label>Kategoria prawa jazdy:</label>
-            <select value={licenseCategory} onChange={(e) => setLicenseCategory(e.target.value)}>
+            <select value={licenseCategory} onChange={handleLicenseCategoryChange}>
               <option value="">— nie ustawiono —</option>
               {LICENSE_CATEGORIES.map((cat) => (
                 <option key={cat} value={cat}>{LICENSE_CATEGORY_LABELS[cat]}</option>
               ))}
             </select>
           </div>
-          <button type="submit">{popupMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}</button>
+          <button
+            type="submit"
+            onClick={() => logLicense('2b. kliknięto przycisk Zapisz', { kategoria: licenseCategory || null })}
+          >
+            {popupMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}
+          </button>
         </form>
       </Popup>
     </div>
