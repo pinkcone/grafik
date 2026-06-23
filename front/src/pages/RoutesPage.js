@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Popup from '../components/Popup';
 import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
-
-const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
+import { logRouteLicense } from '../utils/licenseLog';
 
 function RoutesPage() {
   const [routes, setRoutes] = useState([]);
@@ -72,6 +71,7 @@ function RoutesPage() {
   };
 
   const handleAddRouteClick = () => {
+    logRouteLicense('1. otwarcie dodawania', { required_license_category: 'B' });
     setPopupMode('add');
     setName('');
     setMainCityId('');
@@ -85,6 +85,10 @@ function RoutesPage() {
   };
 
   const handleEditRouteClick = (route) => {
+    logRouteLicense('1. otwarcie edycji', {
+      id: route.id,
+      required_license_category_z_bazy: route.required_license_category ?? 'B',
+    });
     setPopupMode('edit');
     setCurrentRoute(route);
     setName(route.name);
@@ -128,6 +132,12 @@ function RoutesPage() {
     setSegments(segments.filter((_, idx) => idx !== index));
   };
 
+  const handleRequiredLicenseChange = (e) => {
+    const value = e.target.value;
+    logRouteLicense('2. wybrano kategorię w select', { wartosc: value || null });
+    setRequiredLicenseCategory(value);
+  };
+
   const handlePopupSubmit = async (e) => {
     e.preventDefault();
     const token = localStorage.getItem('token');
@@ -140,45 +150,35 @@ function RoutesPage() {
       linked_route_id: linkedRouteId || null,
       required_license_category: requiredLicenseCategory || 'B',
     };
+    logRouteLicense('3. wysyłam do API', routeData);
 
-    if (popupMode === 'add') {
-      try {
-        const res = await fetch(`/api/routes`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify(routeData),
+    const url = popupMode === 'add' ? `/api/routes` : `/api/routes/${currentRoute.id}`;
+    const method = popupMode === 'add' ? 'POST' : 'PUT';
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(routeData),
+      });
+      if (res.ok) {
+        const saved = await res.json();
+        logRouteLicense('4. odpowiedź API OK', {
+          required_license_category: saved.route?.required_license_category ?? null,
+          cala_trasa: saved.route,
         });
-        if (res.ok) {
-          fetchRoutes();
-          setIsPopupOpen(false);
-        } else {
-          alert('Błąd przy dodawaniu trasy');
-        }
-      } catch (error) {
-        // ignore
+        fetchRoutes();
+        setIsPopupOpen(false);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        logRouteLicense('4. odpowiedź API BŁĄD', { status: res.status, ...err });
+        alert(err.details || err.error || 'Błąd przy zapisie trasy');
       }
-    } else if (popupMode === 'edit' && currentRoute) {
-      try {
-        const res = await fetch(`/api/routes/${currentRoute.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify(routeData),
-        });
-        if (res.ok) {
-          fetchRoutes();
-          setIsPopupOpen(false);
-        } else {
-          alert('Błąd przy edycji trasy');
-        }
-      } catch (error) {
-        // ignore
-      }
+    } catch (error) {
+      logRouteLicense('4. wyjątek sieci', { message: error.message });
     }
   };
 
@@ -298,7 +298,7 @@ function RoutesPage() {
             <label>Wymagana kategoria prawa jazdy:</label>
             <select
               value={requiredLicenseCategory}
-              onChange={(e) => setRequiredLicenseCategory(e.target.value)}
+              onChange={handleRequiredLicenseChange}
               required
             >
               {LICENSE_CATEGORIES.map((cat) => (
@@ -306,7 +306,10 @@ function RoutesPage() {
               ))}
             </select>
           </div>
-          <button type="submit">
+          <button
+            type="submit"
+            onClick={() => logRouteLicense('2b. kliknięto przycisk Zapisz', { kategoria: requiredLicenseCategory || null })}
+          >
             {popupMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}
           </button>
         </form>

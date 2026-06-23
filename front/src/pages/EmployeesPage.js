@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Popup from '../components/Popup';
 import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
-import { logLicense } from '../utils/licenseLog';
+import { logEmployeeLicense } from '../utils/licenseLog';
 
 function EmployeesPage() {
   const [employees, setEmployees] = useState([]);
@@ -49,6 +49,7 @@ function EmployeesPage() {
   };
 
   const handleAddEmployeeClick = () => {
+    logEmployeeLicense('1. otwarcie dodawania', { license_category: null });
     setPopupMode('add');
     setFirstName('');
     setLastName('');
@@ -59,7 +60,7 @@ function EmployeesPage() {
   };
 
   const handleEditEmployeeClick = (emp) => {
-    logLicense('1. otwarcie edycji', { id: emp.id, license_category_z_bazy: emp.license_category ?? null });
+    logEmployeeLicense('1. otwarcie edycji', { id: emp.id, license_category_z_bazy: emp.license_category ?? null });
     setPopupMode('edit');
     setCurrentEmployee(emp);
     setFirstName(emp.first_name);
@@ -72,7 +73,7 @@ function EmployeesPage() {
 
   const handleLicenseCategoryChange = (e) => {
     const value = e.target.value;
-    logLicense('2. wybrano kategorię w select', { wartosc: value || null });
+    logEmployeeLicense('2. wybrano kategorię w select', { wartosc: value || null });
     setLicenseCategory(value);
   };
 
@@ -101,7 +102,7 @@ function EmployeesPage() {
       city_id: cityId,
       license_category: licenseCategory || null,
     };
-    logLicense('3. wysyłam do API', employeeData);
+    logEmployeeLicense('3. wysyłam do API', employeeData);
 
     const url = popupMode === 'add' ? `/api/employees` : `/api/employees/${currentEmployee.id}`;
     const method = popupMode === 'add' ? 'POST' : 'PUT';
@@ -117,7 +118,7 @@ function EmployeesPage() {
       });
       if (res.ok) {
         const saved = await res.json();
-        logLicense('4. odpowiedź API OK', {
+        logEmployeeLicense('4. odpowiedź API OK', {
           license_category: saved.employee?.license_category ?? null,
           caly_pracownik: saved.employee,
         });
@@ -125,11 +126,11 @@ function EmployeesPage() {
         setIsPopupOpen(false);
       } else {
         const err = await res.json().catch(() => ({}));
-        logLicense('4. odpowiedź API BŁĄD', { status: res.status, ...err });
+        logEmployeeLicense('4. odpowiedź API BŁĄD', { status: res.status, ...err });
         alert(err.details || err.error || 'Błąd przy zapisie pracownika');
       }
     } catch (error) {
-      logLicense('4. wyjątek sieci', { message: error.message });
+      logEmployeeLicense('4. wyjątek sieci', { message: error.message });
     }
   };
 
@@ -203,7 +204,7 @@ function EmployeesPage() {
           </div>
           <button
             type="submit"
-            onClick={() => logLicense('2b. kliknięto przycisk Zapisz', { kategoria: licenseCategory || null })}
+            onClick={() => logEmployeeLicense('2b. kliknięto przycisk Zapisz', { kategoria: licenseCategory || null })}
           >
             {popupMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}
           </button>

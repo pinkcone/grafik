@@ -63,7 +63,6 @@ exports.updateScheduleCell = async (req, res) => {
 exports.deleteScheduleById = async (req, res) => {
   try {
     const { id } = req.params;
-    console.log(id);
     // Prosta walidacja id
     if (!/^\d+$/.test(id)) {
       return res.status(400).json({ error: 'Nieprawidłowe id.' });

@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import Popup from '../components/Popup';
 import ScheduleView from './ScheduleView';
 import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
-import { logLicense } from '../utils/licenseLog';
+import { logEmployeeLicense, logRouteLicense, logLicenseReady } from '../utils/licenseLog';
 
 
 function CityDetailPage() {
@@ -46,6 +46,7 @@ function CityDetailPage() {
   const [routeLicenseCategory, setRouteLicenseCategory] = useState('B');
 
   useEffect(() => {
+    logLicenseReady({ cityId });
     fetchCity();
     fetchEmployees();
     fetchRoutes();
@@ -108,6 +109,7 @@ function CityDetailPage() {
 
   // Funkcje dla modala pracowników
   const openEmployeeModalForAdd = () => {
+    logEmployeeLicense('1. otwarcie dodawania', { license_category: null });
     setEmployeeModalMode('add');
     setEmpFirstName('');
     setEmpLastName('');
@@ -118,7 +120,7 @@ function CityDetailPage() {
   };
 
   const openEmployeeModalForEdit = (emp) => {
-    logLicense('1. otwarcie edycji', { id: emp.id, license_category_z_bazy: emp.license_category ?? null });
+    logEmployeeLicense('1. otwarcie edycji', { id: emp.id, license_category_z_bazy: emp.license_category ?? null });
     setEmployeeModalMode('edit');
     setCurrentEmployee(emp);
     setEmpFirstName(emp.first_name);
@@ -131,7 +133,7 @@ function CityDetailPage() {
 
   const handleLicenseCategoryChange = (e) => {
     const value = e.target.value;
-    logLicense('2. wybrano kategorię w select', { wartosc: value || null });
+    logEmployeeLicense('2. wybrano kategorię w select', { wartosc: value || null });
     setEmpLicenseCategory(value);
   };
 
@@ -144,7 +146,7 @@ function CityDetailPage() {
       city_id: empCityId,
       license_category: empLicenseCategory || null,
     };
-    logLicense('3. wysyłam do API', employeeData);
+    logEmployeeLicense('3. wysyłam do API', employeeData);
     try {
       let res;
       if (employeeModalMode === 'add') {
@@ -168,7 +170,7 @@ function CityDetailPage() {
       }
       if (res.ok) {
         const saved = await res.json();
-        logLicense('4. odpowiedź API OK', {
+        logEmployeeLicense('4. odpowiedź API OK', {
           license_category: saved.employee?.license_category ?? null,
           caly_pracownik: saved.employee,
         });
@@ -176,11 +178,11 @@ function CityDetailPage() {
         setIsEmployeeModalOpen(false);
       } else {
         const err = await res.json().catch(() => ({}));
-        logLicense('4. odpowiedź API BŁĄD', { status: res.status, ...err });
+        logEmployeeLicense('4. odpowiedź API BŁĄD', { status: res.status, ...err });
         alert(err.details || err.error || 'Błąd przy zapisie pracownika');
       }
     } catch (error) {
-      logLicense('4. wyjątek sieci', { message: error.message });
+      logEmployeeLicense('4. wyjątek sieci', { message: error.message });
     }
   };
 
@@ -203,6 +205,7 @@ function CityDetailPage() {
 
   // Funkcje dla modala tras
   const openRouteModalForAdd = () => {
+    logRouteLicense('1. otwarcie dodawania', { required_license_category: 'B' });
     setRouteModalMode('add');
     setRouteName('');
     setRouteAdditionalCityId('');
@@ -215,6 +218,10 @@ function CityDetailPage() {
   };
 
   const openRouteModalForEdit = (rt) => {
+    logRouteLicense('1. otwarcie edycji', {
+      id: rt.id,
+      required_license_category_z_bazy: rt.required_license_category ?? 'B',
+    });
     setRouteModalMode('edit');
     setCurrentRoute(rt);
     setRouteName(rt.name || '');
@@ -251,6 +258,12 @@ function CityDetailPage() {
     setSegments(segments.filter((_, idx) => idx !== index));
   };
 
+  const handleRouteLicenseChange = (e) => {
+    const value = e.target.value;
+    logRouteLicense('2. wybrano kategorię w select', { wartosc: value || null });
+    setRouteLicenseCategory(value);
+  };
+
   const handleRouteSubmit = async (e) => {
     e.preventDefault();
     const routeData = {
@@ -261,6 +274,7 @@ function CityDetailPage() {
       linked_route_id: routeLinkedId || null,
       required_license_category: routeLicenseCategory || 'B',
     };
+    logRouteLicense('3. wysyłam do API', routeData);
     try {
       let res;
       if (routeModalMode === 'add') {
@@ -283,13 +297,20 @@ function CityDetailPage() {
         });
       }
       if (res.ok) {
+        const saved = await res.json();
+        logRouteLicense('4. odpowiedź API OK', {
+          required_license_category: saved.route?.required_license_category ?? null,
+          cala_trasa: saved.route,
+        });
         fetchRoutes();
         setIsRouteModalOpen(false);
       } else {
-        alert('Błąd przy zapisie trasy');
+        const err = await res.json().catch(() => ({}));
+        logRouteLicense('4. odpowiedź API BŁĄD', { status: res.status, ...err });
+        alert(err.details || err.error || 'Błąd przy zapisie trasy');
       }
     } catch (error) {
-      // ignore
+      logRouteLicense('4. wyjątek sieci', { message: error.message });
     }
   };
 
@@ -454,7 +475,7 @@ function CityDetailPage() {
           </div>
           <button
             type="submit"
-            onClick={() => logLicense('2b. kliknięto przycisk Zapisz', { kategoria: empLicenseCategory || null })}
+            onClick={() => logEmployeeLicense('2b. kliknięto przycisk Zapisz', { kategoria: empLicenseCategory || null })}
           >
             {employeeModalMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}
           </button>
@@ -503,7 +524,7 @@ function CityDetailPage() {
           </div>
           <div>
             <label>Wymagana kategoria prawa jazdy:</label>
-            <select value={routeLicenseCategory} onChange={(e) => setRouteLicenseCategory(e.target.value)} required>
+            <select value={routeLicenseCategory} onChange={handleRouteLicenseChange} required>
               {LICENSE_CATEGORIES.map((cat) => (
                 <option key={cat} value={cat}>{LICENSE_CATEGORY_LABELS[cat]}</option>
               ))}
@@ -520,7 +541,12 @@ function CityDetailPage() {
                 ))}
             </select>
           </div>
-          <button type="submit">{routeModalMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}</button>
+          <button
+            type="submit"
+            onClick={() => logRouteLicense('2b. kliknięto przycisk Zapisz', { kategoria: routeLicenseCategory || null })}
+          >
+            {routeModalMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}
+          </button>
         </form>
       </Popup>
     </div>

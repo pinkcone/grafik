@@ -12,6 +12,12 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    # index.html bez cache — po deployu od razu nowy JS
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        try_files /index.html =404;
+    }
+
     location /api/ {
         proxy_pass http://127.0.0.1:5000;
         proxy_http_version 1.1;
