@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Popup from '../components/Popup';
 import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
+import { debugLog } from '../utils/debugLog';
 
 const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
 
@@ -32,10 +33,6 @@ function EmployeesPage() {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
-      console.log('[employee-ui] fetchEmployees:', data);
-      if (Array.isArray(data)) {
-        data.forEach((e) => console.log('[employee-ui]   id=%s license_category=%j', e.id, e.license_category));
-      }
       setEmployees(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching employees:', error);
@@ -66,8 +63,7 @@ function EmployeesPage() {
   };
 
   const handleEditEmployeeClick = (emp) => {
-    console.log('[employee-ui] edycja — dane z API:', emp);
-    console.log('[employee-ui] edycja — license_category z API:', emp.license_category);
+    debugLog('edycja pracownika z API:', { id: emp.id, license_category: emp.license_category, emp });
     setPopupMode('edit');
     setCurrentEmployee(emp);
     setFirstName(emp.first_name);
@@ -103,8 +99,7 @@ function EmployeesPage() {
       city_id: cityId,
       license_category: licenseCategory || null,
     };
-    console.log('[employee-ui] submit mode=%s licenseCategory=%j payload=%o',
-      popupMode, licenseCategory, employeeData);
+    debugLog('zapis pracownika', { mode: popupMode, licenseCategory, employeeData });
 
     if (popupMode === 'add') {
       try {
@@ -118,12 +113,12 @@ function EmployeesPage() {
         });
         if (res.ok) {
           const saved = await res.json();
-          console.log('[employee-ui] dodaj OK:', saved);
+          debugLog('dodaj OK', saved);
           fetchEmployees();
           setIsPopupOpen(false);
         } else {
           const err = await res.json().catch(() => ({}));
-          console.error('[employee-ui] dodaj BŁĄD:', res.status, err);
+          debugLog('dodaj BŁĄD', { status: res.status, err });
           alert(err.details || err.error || 'Błąd przy dodawaniu pracownika');
         }
       } catch (error) {
@@ -141,13 +136,13 @@ function EmployeesPage() {
         });
         if (res.ok) {
           const saved = await res.json();
-          console.log('[employee-ui] edycja OK:', saved);
-          console.log('[employee-ui] edycja OK, license_category:', saved.employee?.license_category);
+          debugLog('edycja OK', saved);
+          debugLog('license_category w odpowiedzi:', saved.employee?.license_category);
           fetchEmployees();
           setIsPopupOpen(false);
         } else {
           const err = await res.json().catch(() => ({}));
-          console.error('[employee-ui] edycja BŁĄD:', res.status, err);
+          debugLog('edycja BŁĄD', { status: res.status, err });
           alert(err.details || err.error || 'Błąd przy edycji pracownika');
         }
       } catch (error) {

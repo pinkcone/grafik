@@ -1,8 +1,10 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
 import '../styles/Header.css';
 
-function Header() {
+function Header({ onLogout }) {
+  const navigate = useNavigate();
   const token = localStorage.getItem('token');
   let userName = '';
   let initials = 'U';
@@ -25,11 +27,13 @@ function Header() {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
-    window.location.href = '/login';
+    window.dispatchEvent(new Event('grafik-auth'));
+    onLogout?.();
+    navigate('/login');
   };
 
   const handleStartPage = () => {
-    window.location.href = '/';
+    navigate('/');
   };
 
   return (

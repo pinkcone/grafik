@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 function RegisterPage() {
   const [firstName, setFirstName] = useState('');
@@ -84,7 +84,7 @@ function RegisterPage() {
         {error && <p style={{ color: 'red' }}>{error}</p>}
         <button type="submit">Zarejestruj się</button>
       </form>
-      <p>Masz już konto? <a href="/login">Zaloguj się</a></p>
+      <p>Masz już konto? <Link to="/login">Zaloguj się</Link></p>
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import "../styles/LoginPage.css";
 function LoginPage() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -25,9 +27,8 @@ function LoginPage() {
       } else {
         // Zapisujemy token w localStorage
         localStorage.setItem('token', data.token);
-        console.log("Token saved, reloading page to load homepage");
-        // Przekierowujemy do strony głównej i przeładowujemy stronę
-        window.location.href = "/";
+        window.dispatchEvent(new Event('grafik-auth'));
+        navigate('/');
       }
     } catch (err) {
       console.error("Network error:", err);
@@ -60,7 +61,7 @@ function LoginPage() {
         {error && <p style={{ color: 'red' }}>{error}</p>}
         <button type="submit">Zaloguj się</button>
       </form>
-      <p>Nie masz konta? <a href="/register">Zarejestruj się</a></p>
+      <p>Nie masz konta? <Link to="/register">Zarejestruj się</Link></p>
     </div>
   );
 }

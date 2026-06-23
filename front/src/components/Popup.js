@@ -27,7 +27,7 @@ const Popup = ({ isOpen, onClose, children }) => {
     <div style={popupStyle}>
       <div style={popupContentStyle}>
         {children}
-        <button onClick={onClose} style={{ marginTop: '10px' }}>
+        <button type="button" onClick={onClose} style={{ marginTop: '10px' }}>
           Zamknij
         </button>
       </div>
