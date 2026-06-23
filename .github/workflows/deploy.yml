@@ -44,9 +44,10 @@ jobs:
 
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-          # Bez -i klucz idzie z ssh-agent — NIE używaj IdentitiesOnly=yes (blokuje agenta)
+          # Najpierw pobierz najnowszy scripts/deploy.sh, potem go uruchom
+          # (inaczej serwer wykonuje deploy.sh sprzed jednego commita).
           ssh -o BatchMode=yes \
             -o PreferredAuthentications=publickey \
             -o StrictHostKeyChecking=yes \
             "${SSH_USER}@${HOST}" \
-            "cd '${DIR}' && bash scripts/deploy.sh"
+            "cd '${DIR}' && git fetch origin main && git reset --hard origin/main && bash scripts/deploy.sh"
