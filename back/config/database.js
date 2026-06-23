@@ -1,20 +1,23 @@
-require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+require('../loadEnv');
 
 const { Sequelize } = require('sequelize');
 
-// localhost → ::1 (IPv6); MySQL na Ubuntu zwykle słucha tylko 127.0.0.1
 const dbHost = process.env.DB_HOST || '127.0.0.1';
 const resolvedHost = dbHost === 'localhost' ? '127.0.0.1' : dbHost;
+const dbName = process.env.DB_NAME;
+const dbUser = process.env.DB_USER;
+const dbPassword = process.env.DB_PASSWORD ?? '';
 
-const sequelize = new Sequelize(
-  process.env.DB_NAME || 'graf',
-  process.env.DB_USER || 'root',
-  process.env.DB_PASSWORD || '',
-  {
-    host: resolvedHost,
-    dialect: 'mysql',
-    logging: false,
-  }
-);
+if (!dbName || !dbUser) {
+  throw new Error(
+    'Brak DB_NAME lub DB_USER — uzupełnij /var/www/grafik/back/.env (nie używamy domyślnego root)'
+  );
+}
+
+const sequelize = new Sequelize(dbName, dbUser, dbPassword, {
+  host: resolvedHost,
+  dialect: 'mysql',
+  logging: false,
+});
 
 module.exports = sequelize;
