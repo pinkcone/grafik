@@ -26,7 +26,7 @@ cd ..
 
 echo "==> PM2: restart API"
 if pm2 describe grafik-api >/dev/null 2>&1; then
-  pm2 reload ecosystem.config.cjs --env production
+  pm2 restart ecosystem.config.cjs --env production
 else
   pm2 start ecosystem.config.cjs --env production
 fi

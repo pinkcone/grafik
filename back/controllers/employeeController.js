@@ -1,5 +1,10 @@
 const { Employee } = require('../models');
 
+const normalizeLicenseCategory = (value) => {
+  if (value === 'B' || value === 'C') return value;
+  return null;
+};
+
 exports.createEmployee = async (req, res) => {
   try {
     const { first_name, last_name, part_time, city_id, license_category } = req.body;
@@ -9,10 +14,11 @@ exports.createEmployee = async (req, res) => {
       last_name,
       part_time,
       city_id,
-      license_category: license_category || null,
+      license_category: normalizeLicenseCategory(license_category),
       user_id,
     });
-    res.status(201).json({ message: 'Pracownik utworzony', employee });
+    const fresh = await Employee.findByPk(employee.id);
+    res.status(201).json({ message: 'Pracownik utworzony', employee: fresh });
   } catch (error) {
     res.status(500).json({ error: 'Błąd przy tworzeniu pracownika', details: error.message });
   }
@@ -44,17 +50,32 @@ exports.updateEmployee = async (req, res) => {
     const { id } = req.params;
     const { first_name, last_name, part_time, city_id, license_category } = req.body;
     const user_id = req.user.id;
+    const savedCategory = normalizeLicenseCategory(license_category);
+
     const employee = await Employee.findOne({ where: { id, user_id } });
     if (!employee) return res.status(404).json({ error: 'Pracownik nie znaleziony' });
+
     await employee.update({
       first_name,
       last_name,
       part_time,
       city_id,
-      license_category: license_category || null,
+      license_category: savedCategory,
     });
-    await employee.reload();
-    res.json({ message: 'Pracownik zaktualizowany', employee });
+
+    const fresh = await Employee.findByPk(employee.id);
+    const dbCategory = fresh?.license_category ?? null;
+
+    if (savedCategory !== null && dbCategory !== savedCategory) {
+      return res.status(500).json({
+        error: 'license_category nie zapisało się w bazie',
+        details: `Wysłano "${savedCategory}", w bazie jest "${dbCategory}"`,
+        sent: savedCategory,
+        in_db: dbCategory,
+      });
+    }
+
+    res.json({ message: 'Pracownik zaktualizowany', employee: fresh });
   } catch (error) {
     res.status(500).json({ error: 'Błąd przy aktualizacji pracownika', details: error.message });
   }
