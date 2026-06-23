@@ -14,7 +14,6 @@ async function ensureLicenseColumns(sequelize) {
       allowNull: true,
       comment: 'Najwyższa kategoria prawa jazdy (C uprawnia też do B)',
     });
-    console.log('Migracja: dodano employees.license_category');
   }
 
   const routes = await qi.describeTable('routes').catch(() => null);
@@ -25,7 +24,6 @@ async function ensureLicenseColumns(sequelize) {
       defaultValue: 'B',
       comment: 'Wymagana kategoria prawa jazdy na trasie',
     });
-    console.log('Migracja: dodano routes.required_license_category');
   }
 }
 

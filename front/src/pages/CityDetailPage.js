@@ -71,6 +71,10 @@ function CityDetailPage() {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
+      console.log('[employee-ui] fetchEmployees city/%s:', cityId, data);
+      if (Array.isArray(data)) {
+        data.forEach((e) => console.log('[employee-ui]   id=%s license_category=%j', e.id, e.license_category));
+      }
       setEmployees(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Błąd pobierania pracowników:', error);
@@ -118,6 +122,8 @@ function CityDetailPage() {
   };
 
   const openEmployeeModalForEdit = (emp) => {
+    console.log('[employee-ui] edycja — dane z API:', emp);
+    console.log('[employee-ui] edycja — license_category z API:', emp.license_category);
     setEmployeeModalMode('edit');
     setCurrentEmployee(emp);
     setEmpFirstName(emp.first_name);
@@ -137,6 +143,8 @@ function CityDetailPage() {
       city_id: empCityId,
       license_category: empLicenseCategory || null,
     };
+    console.log('[employee-ui] submit mode=%s empLicenseCategory=%j payload=%o',
+      employeeModalMode, empLicenseCategory, employeeData);
     try {
       let res;
       if (employeeModalMode === 'add') {
@@ -159,10 +167,14 @@ function CityDetailPage() {
         });
       }
       if (res.ok) {
+        const saved = await res.json();
+        console.log('[employee-ui] zapis OK, odpowiedź API:', saved);
+        console.log('[employee-ui] zapis OK, license_category w odpowiedzi:', saved.employee?.license_category);
         fetchEmployees();
         setIsEmployeeModalOpen(false);
       } else {
         const err = await res.json().catch(() => ({}));
+        console.error('[employee-ui] zapis BŁĄD status=%s', res.status, err);
         alert(err.details || err.error || 'Błąd przy zapisie pracownika');
       }
     } catch (error) {

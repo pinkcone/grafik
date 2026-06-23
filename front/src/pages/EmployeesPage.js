@@ -32,6 +32,10 @@ function EmployeesPage() {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
+      console.log('[employee-ui] fetchEmployees:', data);
+      if (Array.isArray(data)) {
+        data.forEach((e) => console.log('[employee-ui]   id=%s license_category=%j', e.id, e.license_category));
+      }
       setEmployees(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching employees:', error);
@@ -62,6 +66,8 @@ function EmployeesPage() {
   };
 
   const handleEditEmployeeClick = (emp) => {
+    console.log('[employee-ui] edycja — dane z API:', emp);
+    console.log('[employee-ui] edycja — license_category z API:', emp.license_category);
     setPopupMode('edit');
     setCurrentEmployee(emp);
     setFirstName(emp.first_name);
@@ -97,6 +103,8 @@ function EmployeesPage() {
       city_id: cityId,
       license_category: licenseCategory || null,
     };
+    console.log('[employee-ui] submit mode=%s licenseCategory=%j payload=%o',
+      popupMode, licenseCategory, employeeData);
 
     if (popupMode === 'add') {
       try {
@@ -109,10 +117,13 @@ function EmployeesPage() {
           body: JSON.stringify(employeeData),
         });
         if (res.ok) {
+          const saved = await res.json();
+          console.log('[employee-ui] dodaj OK:', saved);
           fetchEmployees();
           setIsPopupOpen(false);
         } else {
           const err = await res.json().catch(() => ({}));
+          console.error('[employee-ui] dodaj BŁĄD:', res.status, err);
           alert(err.details || err.error || 'Błąd przy dodawaniu pracownika');
         }
       } catch (error) {
@@ -129,10 +140,14 @@ function EmployeesPage() {
           body: JSON.stringify(employeeData),
         });
         if (res.ok) {
+          const saved = await res.json();
+          console.log('[employee-ui] edycja OK:', saved);
+          console.log('[employee-ui] edycja OK, license_category:', saved.employee?.license_category);
           fetchEmployees();
           setIsPopupOpen(false);
         } else {
           const err = await res.json().catch(() => ({}));
+          console.error('[employee-ui] edycja BŁĄD:', res.status, err);
           alert(err.details || err.error || 'Błąd przy edycji pracownika');
         }
       } catch (error) {
