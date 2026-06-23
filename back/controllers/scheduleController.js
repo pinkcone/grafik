@@ -1,8 +1,23 @@
 // controllers/scheduleController.js
 const { Schedule, Employee, Route } = require('../models');
 const { Op } = require('sequelize');
-const { canDriveWithCategory } = require('../utils/licenseCategories');
-const { canAssignEmployeeToRoute } = require('../utils/routeAssignment');
+const { canAssignEmployeeToRoute, getAssignmentBlockReason, findPairRoute } = require('../utils/routeAssignment');
+const { generateAutoFillAssignments } = require('../utils/scheduleAutoFill');
+
+const parseWorkingHours = (wh) => {
+  if (!wh) return null;
+  if (typeof wh === 'object') return wh;
+  try {
+    return JSON.parse(wh);
+  } catch {
+    return null;
+  }
+};
+
+const routeHasSegments = (route) => {
+  const wh = parseWorkingHours(route.working_hours);
+  return !!(wh && Array.isArray(wh.segments) && wh.segments.length > 0);
+};
 
 /**
  * PUT /api/schedule/update-cell
@@ -32,16 +47,12 @@ exports.updateScheduleCell = async (req, res) => {
       if (!route) {
         return res.status(400).json({ message: 'Trasa nie znaleziona.' });
       }
-      if (!canAssignEmployeeToRoute(employee, route)) {
-        const reqCat = route.required_license_category || 'B';
-        const empCat = employee.license_category || 'brak';
-        if (!canDriveWithCategory(employee.license_category, route.required_license_category)) {
-          return res.status(400).json({
-            message: `Kategoria prawa jazdy nie pasuje: trasa wymaga ${reqCat}, pracownik ma ${empCat}.`,
-          });
-        }
+      const userRoutes = await Route.findAll({ where: { user_id } });
+      const pairedRoute = findPairRoute(route, userRoutes);
+      if (!canAssignEmployeeToRoute(employee, route, { pairedRoute })) {
+        const reason = getAssignmentBlockReason(employee, route, { pairedRoute });
         return res.status(400).json({
-          message: 'Trasa wymaga specjalnych uprawnień, których ten pracownik nie posiada.',
+          message: reason || 'Pracownik nie spełnia wymagań trasy.',
         });
       }
     }
@@ -120,6 +131,89 @@ exports.getCitySchedule = async (req, res) => {
     return res.status(500).json({
       message: 'Błąd pobierania grafiku',
       error: error.message
+    });
+  }
+};
+
+/**
+ * POST /api/schedule/city/:cityId/auto-fill?month=MM&year=YYYY
+ * Uzupełnia puste sloty tras (nie nadpisuje etykiet ani istniejących tras).
+ */
+exports.autoFillRoutes = async (req, res) => {
+  const { cityId } = req.params;
+  const { month, year } = req.query;
+  const user_id = req.user.id;
+
+  try {
+    const monthNum = parseInt(month, 10);
+    const yearNum = parseInt(year, 10);
+    if (!monthNum || !yearNum) {
+      return res.status(400).json({ message: 'Podaj month i year w query.' });
+    }
+
+    const lastDay = new Date(yearNum, monthNum, 0).getDate();
+    const startDate = `${yearNum}-${String(monthNum).padStart(2, '0')}-01`;
+    const endDate = `${yearNum}-${String(monthNum).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    const [employees, routes, schedules] = await Promise.all([
+      Employee.findAll({ where: { city_id: cityId, user_id } }),
+      Route.findAll({ where: { main_city_id: cityId, user_id } }),
+      Schedule.findAll({
+        where: { date: { [Op.between]: [startDate, endDate] } },
+      }),
+    ]);
+
+    const activeRoutes = routes.filter(routeHasSegments);
+    const cityEmployeeIds = new Set(employees.map((e) => e.id.toString()));
+    const citySchedules = schedules.filter((s) =>
+      cityEmployeeIds.has(s.employee_id?.toString())
+    );
+
+    const proposals = generateAutoFillAssignments({
+      employees,
+      routes: activeRoutes,
+      schedules: citySchedules,
+      month: monthNum,
+      year: yearNum,
+      user_id,
+    });
+
+    if (proposals.length === 0) {
+      return res.json({
+        message: 'Brak pustych slotów tras do uzupełnienia.',
+        created: 0,
+        assignments: [],
+      });
+    }
+
+    const created = [];
+    for (const item of proposals) {
+      const existing = await Schedule.findOne({
+        where: { date: item.date, route_id: item.route_id },
+      });
+      if (existing) continue;
+
+      const row = await Schedule.create({
+        date: item.date,
+        employee_id: item.employee_id,
+        route_id: item.route_id,
+        label: null,
+        assignment_type: 'route',
+        user_id,
+      });
+      created.push(row);
+    }
+
+    return res.json({
+      message: `Uzupełniono ${created.length} przypisań tras.`,
+      created: created.length,
+      assignments: created,
+    });
+  } catch (error) {
+    console.error('Błąd w autoFillRoutes:', error);
+    return res.status(500).json({
+      message: 'Błąd auto-uzupełniania grafiku',
+      error: error.message,
     });
   }
 };

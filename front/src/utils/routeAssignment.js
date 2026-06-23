@@ -8,18 +8,100 @@ export const toBoolean = (value) => {
 
 export const hasSpecialPermissions = (value) => toBoolean(value);
 
-export const canAssignEmployeeToRoute = (employee, route) => {
-  if (!employee || !route) return false;
+export const findPairRoute = (route, allRoutes = []) => {
+  if (!route || !Array.isArray(allRoutes)) return null;
+  const idStr = route.id.toString();
 
-  if (!canDriveWithCategory(employee.license_category, route.required_license_category || 'B')) {
-    return false;
+  if (route.linked_route_id != null) {
+    return allRoutes.find((r) => r.id.toString() === route.linked_route_id.toString()) || null;
+  }
+
+  return allRoutes.find(
+    (r) => r.linked_route_id != null && r.linked_route_id.toString() === idStr
+  ) || null;
+};
+
+export const getAssignmentBlockReason = (employee, route, options = {}) => {
+  const { pairedRoute = null } = options;
+
+  if (!employee || !route) {
+    return 'Brak danych pracownika lub trasy.';
+  }
+
+  const requiredCategory = route.required_license_category || 'B';
+  const employeeCategory = employee.license_category || null;
+
+  if (!canDriveWithCategory(employeeCategory, requiredCategory)) {
+    if (!employeeCategory) {
+      return `Brak ustawionej kategorii prawa jazdy (trasa wymaga ${requiredCategory}).`;
+    }
+    return `Kategoria prawa jazdy nie pasuje: trasa wymaga ${requiredCategory}, pracownik ma ${employeeCategory}.`;
   }
 
   if (hasSpecialPermissions(route.requires_special_permissions) && !hasSpecialPermissions(employee.special_permissions)) {
-    return false;
+    return 'Trasa wymaga specjalnych uprawnień, których ten pracownik nie posiada.';
   }
 
-  return true;
+  if (pairedRoute) {
+    const pairReason = getAssignmentBlockReason(employee, pairedRoute);
+    if (pairReason) {
+      return `Trasa powiązana „${pairedRoute.name}”: ${pairReason}`;
+    }
+  }
+
+  return null;
+};
+
+export const canAssignEmployeeToRoute = (employee, route, options = {}) => {
+  return getAssignmentBlockReason(employee, route, options) === null;
+};
+
+export const canAssignEmployeeToRouteWithPair = (employee, route, allRoutes = []) => {
+  const pairedRoute = findPairRoute(route, allRoutes);
+  return canAssignEmployeeToRoute(employee, route, { pairedRoute });
+};
+
+export const getRouteRestrictionTier = (route) => {
+  if (!route) return 0;
+  const needsC = (route.required_license_category || 'B') === 'C';
+  const needsSP = hasSpecialPermissions(route.requires_special_permissions);
+  if (needsC && needsSP) return 4;
+  if (needsC) return 3;
+  if (needsSP) return 2;
+  return 1;
+};
+
+export const getRouteRestrictionTierWithPair = (route, allRoutes = []) => {
+  const pair = findPairRoute(route, allRoutes);
+  return Math.max(getRouteRestrictionTier(route), getRouteRestrictionTier(pair));
+};
+
+export const getEmployeeCapabilityTier = (employee) => {
+  if (!employee) return 0;
+  const hasC = employee.license_category === 'C';
+  const hasB = employee.license_category === 'B';
+  const hasSP = hasSpecialPermissions(employee.special_permissions);
+  if (hasC && hasSP) return 4;
+  if (hasC) return 3;
+  if (hasB && hasSP) return 2;
+  if (hasB) return 1;
+  return 0;
+};
+
+export const sortRoutesByAssignmentPriority = (routes = []) => {
+  return [...routes].sort((a, b) => {
+    const tierDiff = getRouteRestrictionTierWithPair(b, routes) - getRouteRestrictionTierWithPair(a, routes);
+    if (tierDiff !== 0) return tierDiff;
+    return (a.name || '').localeCompare(b.name || '', 'pl');
+  });
+};
+
+export const compareEmployeesForRoute = (employeeA, employeeB, route, allRoutes = []) => {
+  const routeTier = getRouteRestrictionTierWithPair(route, allRoutes);
+  const tierA = getEmployeeCapabilityTier(employeeA);
+  const tierB = getEmployeeCapabilityTier(employeeB);
+  if (routeTier >= 2) return tierB - tierA;
+  return tierA - tierB;
 };
 
 export const formatYesNo = (value) => (hasSpecialPermissions(value) ? 'Tak' : 'Nie');

@@ -11,11 +11,11 @@ const IMPLIES = {
 };
 
 export const canDriveWithCategory = (employeeCategory, requiredCategory) => {
-  if (!requiredCategory) return true;
-  if (!employeeCategory) return true;
+  const required = requiredCategory || 'B';
+  if (!employeeCategory) return false;
   const allowed = IMPLIES[employeeCategory];
   if (!allowed) return false;
-  return allowed.includes(requiredCategory);
+  return allowed.includes(required);
 };
 
 export const effectiveCategories = (employeeCategory) => {

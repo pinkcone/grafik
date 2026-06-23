@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { decorateWorksheet } from './elements/decorateWorksheet';
-import { canAssignEmployeeToRoute } from '../utils/routeAssignment';
+import { canAssignEmployeeToRouteWithPair, getAssignmentBlockReason, findPairRoute, sortRoutesByAssignmentPriority } from '../utils/routeAssignment';
 import '../styles/ScheduleView.css';
 import '../styles/ScheduleDayMenu.css';
 
@@ -163,6 +163,17 @@ function ScheduleView({ cityId }) {
   const days = [];
   for (let d = 1; d <= daysInMonth(month, year); d++) days.push(d);
 
+  const assertEmployeeCanTakeRoute = (employeeId, routeId) => {
+    const employee = employees.find((e) => e.id.toString() === employeeId.toString());
+    const route = routes.find((r) => r.id.toString() === routeId.toString());
+    const reason = getAssignmentBlockReason(employee, route, {
+      pairedRoute: findPairRoute(route, routes),
+    });
+    if (reason) {
+      throw new Error(reason);
+    }
+  };
+
   /** ================= EMPLOYEE VIEW: CREATE/UPDATE ================= */
 
   // Dodanie pierwszego wpisu w danym dniu (gdy brak wpisów)
@@ -176,6 +187,7 @@ function ScheduleView({ cityId }) {
 
     try {
       if (route_id) {
+        assertEmployeeCanTakeRoute(employeeId, route_id);
         // 1) najpierw wybrana trasa
         await putScheduleCell({ date, route_id: Number(route_id), employee_id: employeeId });
 
@@ -231,6 +243,7 @@ function ScheduleView({ cityId }) {
 
     try {
       if (route_id) {
+        assertEmployeeCanTakeRoute(entry.employee_id, route_id);
         // 1) wybrana trasa
         await putScheduleCell({ date, route_id: Number(route_id), employee_id: entry.employee_id });
 
@@ -286,10 +299,12 @@ function ScheduleView({ cityId }) {
 
     const employee = employees.find(e => e.id.toString() === employeeId.toString());
 
-    const availableRoutes = routes.filter(r => {
-      if (assignedRouteIds.includes(r.id.toString())) return false;
-      return canAssignEmployeeToRoute(employee, r);
-    });
+    const availableRoutes = sortRoutesByAssignmentPriority(
+      routes.filter((r) => {
+        if (assignedRouteIds.includes(r.id.toString())) return false;
+        return canAssignEmployeeToRouteWithPair(employee, r, routes);
+      })
+    );
 
     const routeOptions = availableRoutes.map(r => ({
       value: `R:${r.id}`,
@@ -452,6 +467,9 @@ function ScheduleView({ cityId }) {
       }
 
       // Zwykłe przypisanie/odpięcie
+      if (employeeId != null) {
+        assertEmployeeCanTakeRoute(employeeId, routeId);
+      }
       await putScheduleCell({ date, route_id: Number(routeId), employee_id: employeeId });
 
       // Jeśli przypinamy pracownika – rozważ bliźniaczą
@@ -603,6 +621,35 @@ const handleExportXLSX = () => {
   saveAs(new Blob([wbout]), "grafik.xlsx");
 };
 
+  const handleAutoFillRoutes = async () => {
+    const ok = window.confirm(
+      'Uzupełnić puste sloty tras w tym miesiącu?\n\n' +
+      'Najpierw przypisane zostaną trasy wymagające kat. C i specjalnych uprawnień.\n' +
+      'Etykiety (urlopy, DW itd.) nie zostaną zmienione.'
+    );
+    if (!ok) return;
+
+    try {
+      const res = await fetch(
+        `/api/schedule/city/${cityId}/auto-fill?month=${month}&year=${year}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || `HTTP ${res.status}`);
+      }
+      alert(data.message || `Uzupełniono ${data.created || 0} przypisań.`);
+      await fetchSchedule();
+      await fetchQuarterSchedules();
+    } catch (error) {
+      alert(`Nie udało się uzupełnić grafiku: ${error.message}`);
+    }
+  };
+
 
 
   const prepareEmployeesSheet = () => {
@@ -735,7 +782,7 @@ const prepareRoutesSheet = () => {
         .filter(emp => {
           const empId = emp.id.toString();
 
-          if (!canAssignEmployeeToRoute(emp, route)) return false;
+          if (!canAssignEmployeeToRouteWithPair(emp, route, routes)) return false;
 
           // Jeśli pracownik jest już na którejś trasie z pary → dopuść (żeby móc edytować)
           for (const rid of pairIds) {
@@ -833,6 +880,9 @@ const prepareRoutesSheet = () => {
 
       <div className="schedule-toolbar">
         <button type="button" onClick={handleExportXLSX}>Eksport do XLSX</button>
+        <button type="button" className="btn-primary" onClick={handleAutoFillRoutes}>
+          Uzupełnij trasy
+        </button>
       </div>
 
       <div style={{ marginBottom: '10px' }}>
