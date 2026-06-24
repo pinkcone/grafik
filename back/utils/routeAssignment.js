@@ -1,6 +1,6 @@
 const { canDriveWithCategory } = require('./licenseCategories');
 const { getOperatingDayBlockReason } = require('./routeOperatingDays');
-const { getSaturdayAssignmentBlockReason } = require('./scheduleRules');
+const { getSaturdayAssignmentBlockReason, getSaturdayDw5BlockReason, isSaturday } = require('./scheduleRules');
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 const { canEmployeeHaveAnotherRouteOnDay } = require('./scheduleConstraints');
 
@@ -33,7 +33,7 @@ const findPairRoute = (route, allRoutes = []) => {
 };
 
 const getAssignmentBlockReason = (employee, route, options = {}) => {
-  const { pairedRoute = null, date = null, schedules = null, allRoutes = [] } = options;
+  const { pairedRoute = null, date = null, schedules = null, allRoutes = [], employeeCount = 0, initialEmployeeDays = null } = options;
 
   if (!employee || !route) {
     return 'Brak danych pracownika lub trasy.';
@@ -44,7 +44,12 @@ const getAssignmentBlockReason = (employee, route, options = {}) => {
   }
 
   if (date && schedules && allRoutes.length > 0) {
-    if (!canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, schedules, allRoutes)) {
+    const canTake =
+      canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, schedules, allRoutes) ||
+      canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, schedules, allRoutes, {
+        allowPairLeg: true,
+      });
+    if (!canTake) {
       return 'Pracownik ma już inną trasę tego dnia — nie można przypisać drugiej.';
     }
   }
@@ -59,6 +64,18 @@ const getAssignmentBlockReason = (employee, route, options = {}) => {
 
   const saturdayReason = getSaturdayAssignmentBlockReason(employee, route, date);
   if (saturdayReason) return saturdayReason;
+
+  if (date && isSaturday(date) && employeeCount > 0 && schedules) {
+    const dw5Reason = getSaturdayDw5BlockReason(
+      employee,
+      date,
+      schedules,
+      allRoutes,
+      employeeCount,
+      { initialEmployeeDays }
+    );
+    if (dw5Reason) return dw5Reason;
+  }
 
   if (pairedRoute) {
     const pairSaturdayReason = getSaturdayAssignmentBlockReason(

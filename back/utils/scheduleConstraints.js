@@ -17,9 +17,8 @@ const getPairRouteIdsIncludingSelf = (routeId, routes) => {
   return Array.from(pair);
 };
 
-/** Liczba tras (para = 1) przypisanych pracownikowi w danym dniu */
-const getEmployeeRouteSlotCountOnDay = (employeeId, date, schedules, routes) => {
-  const routeIds = schedules
+const getEmployeeRouteIdsOnDay = (employeeId, date, schedules) =>
+  schedules
     .filter(
       (s) =>
         s.date === date &&
@@ -28,6 +27,9 @@ const getEmployeeRouteSlotCountOnDay = (employeeId, date, schedules, routes) => 
     )
     .map((s) => s.route_id.toString());
 
+/** Liczba tras (para = 1) przypisanych pracownikowi w danym dniu */
+const getEmployeeRouteSlotCountOnDay = (employeeId, date, schedules, routes) => {
+  const routeIds = getEmployeeRouteIdsOnDay(employeeId, date, schedules);
   const seenPairs = new Set();
   let count = 0;
   for (const rid of routeIds) {
@@ -41,31 +43,33 @@ const getEmployeeRouteSlotCountOnDay = (employeeId, date, schedules, routes) => 
 };
 
 const hasEmployeeRouteOnDay = (employeeId, date, schedules) =>
-  schedules.some(
-    (s) =>
-      s.employee_id?.toString() === employeeId.toString() &&
-      s.date === date &&
-      s.route_id
-  );
+  getEmployeeRouteIdsOnDay(employeeId, date, schedules).length > 0;
 
-/** Czy pracownik może dostać tę trasę — max 1 trasa/dzień (para liczy się jako jedna) */
-const canEmployeeHaveAnotherRouteOnDay = (employeeId, routeId, date, schedules, routes) => {
+/**
+ * Czy można dodać trasę. Domyślnie: zero tras w dniu i brak etykiety.
+ * allowPairLeg=true tylko przy dopinaniu drugiej nogi pary w tej samej operacji.
+ */
+const canEmployeeHaveAnotherRouteOnDay = (
+  employeeId,
+  routeId,
+  date,
+  schedules,
+  routes,
+  { allowPairLeg = false } = {}
+) => {
   if (hasEmployeeLabelOnDay(employeeId, date, schedules)) return false;
 
   const slotCount = getEmployeeRouteSlotCountOnDay(employeeId, date, schedules, routes);
   if (slotCount === 0) return true;
+  if (!allowPairLeg) return false;
 
   const pairIds = new Set(getPairRouteIdsIncludingSelf(routeId, routes).map(String));
-  const onlyPairRoutes = schedules
-    .filter(
-      (s) =>
-        s.date === date &&
-        s.employee_id?.toString() === employeeId.toString() &&
-        s.route_id
-    )
-    .every((s) => pairIds.has(s.route_id.toString()));
-
-  return slotCount === 1 && onlyPairRoutes;
+  const employeeRouteIds = getEmployeeRouteIdsOnDay(employeeId, date, schedules);
+  return (
+    employeeRouteIds.length === 1 &&
+    pairIds.has(employeeRouteIds[0]) &&
+    pairIds.size > 1
+  );
 };
 
 module.exports = {

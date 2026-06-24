@@ -39,21 +39,33 @@ export const getEmployeeRouteSlotCountOnDay = (employeeId, date, schedules, rout
   return count;
 };
 
-export const canEmployeeHaveAnotherRouteOnDay = (employeeId, routeId, date, schedules, routes) => {
+export const canEmployeeHaveAnotherRouteOnDay = (
+  employeeId,
+  routeId,
+  date,
+  schedules,
+  routes,
+  { allowPairLeg = false } = {}
+) => {
   if (hasEmployeeLabelOnDay(employeeId, date, schedules)) return false;
 
   const slotCount = getEmployeeRouteSlotCountOnDay(employeeId, date, schedules, routes);
   if (slotCount === 0) return true;
+  if (!allowPairLeg) return false;
 
   const pairIds = new Set(getPairRouteIdsIncludingSelf(routeId, routes).map(String));
-  const onlyPairRoutes = schedules
+  const employeeRouteIds = schedules
     .filter(
       (s) =>
         s.date === date &&
         s.employee_id?.toString() === employeeId.toString() &&
         s.route_id
     )
-    .every((s) => pairIds.has(s.route_id.toString()));
+    .map((s) => s.route_id.toString());
 
-  return slotCount === 1 && onlyPairRoutes;
+  return (
+    employeeRouteIds.length === 1 &&
+    pairIds.has(employeeRouteIds[0]) &&
+    pairIds.size > 1
+  );
 };

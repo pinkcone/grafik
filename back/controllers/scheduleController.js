@@ -5,8 +5,7 @@ const { canAssignEmployeeToRoute, getAssignmentBlockReason, findPairRoute } = re
 const { enrichRouteWithOperatingDays, attachOperatingDays } = require('../utils/routeDayHelpers');
 const { generateAutoFillAssignments } = require('../utils/scheduleAutoFill');
 const { generateMonthRouteAssignments } = require('../utils/assignMonth');
-const { generateDw5Proposals } = require('../utils/scheduleRules');
-const { getIsoWeekday } = require('../utils/routeOperatingDays');
+const { generateDw5Proposals, isSaturday, planSaturdayDw5Package } = require('../utils/scheduleRules');
 const { hasEmployeeLabelOnDay } = require('../utils/scheduleLabels');
 const { canEmployeeHaveAnotherRouteOnDay } = require('../utils/scheduleConstraints');
 
@@ -34,11 +33,56 @@ const addDaysToDate = (dateStr, days) => {
 
 const persistRouteProposals = async (proposals, user_id) => {
   const created = [];
+  const routesCache = new Map();
+  const dayStateCache = new Map();
+
   for (const item of proposals) {
     const existing = await Schedule.findOne({
       where: { date: item.date, route_id: item.route_id },
     });
     if (existing) continue;
+
+    const dayKey = `${item.date}|${item.employee_id}`;
+    if (!dayStateCache.has(dayKey)) {
+      const dayEntries = await Schedule.findAll({
+        where: { date: item.date, employee_id: item.employee_id },
+      });
+      dayStateCache.set(
+        dayKey,
+        dayEntries.map((s) => (s.toJSON ? s.toJSON() : s))
+      );
+    }
+    const daySchedules = dayStateCache.get(dayKey);
+
+    if (hasEmployeeLabelOnDay(item.employee_id, item.date, daySchedules)) {
+      continue;
+    }
+
+    if (!routesCache.has(user_id)) {
+      routesCache.set(
+        user_id,
+        await attachOperatingDays(await Route.findAll({ where: { user_id } }))
+      );
+    }
+    const userRoutes = routesCache.get(user_id);
+
+    const canTake =
+      canEmployeeHaveAnotherRouteOnDay(
+        item.employee_id,
+        item.route_id,
+        item.date,
+        daySchedules,
+        userRoutes
+      ) ||
+      canEmployeeHaveAnotherRouteOnDay(
+        item.employee_id,
+        item.route_id,
+        item.date,
+        daySchedules,
+        userRoutes,
+        { allowPairLeg: true }
+      );
+    if (!canTake) continue;
 
     const row = await Schedule.create({
       date: item.date,
@@ -48,6 +92,8 @@ const persistRouteProposals = async (proposals, user_id) => {
       assignment_type: 'route',
       user_id: item.user_id || user_id,
     });
+    const rowJson = row.toJSON ? row.toJSON() : row;
+    daySchedules.push(rowJson);
     created.push(row);
   }
   return created;
@@ -85,34 +131,6 @@ const persistLabelProposals = async (proposals, user_id) => {
   return created;
 };
 
-const applyDw5AfterSaturdayRoute = async (employee_id, saturdayDate, user_id) => {
-  const employee = await Employee.findOne({ where: { id: employee_id, user_id } });
-  if (!employee) return [];
-
-  const endDate = addDaysToDate(saturdayDate, 14);
-  const cityEmployees = await Employee.findAll({
-    where: { city_id: employee.city_id, user_id },
-  });
-  const employeeIds = cityEmployees.map((e) => e.id);
-
-  const [citySchedulesRaw, routesRaw] = await Promise.all([
-    Schedule.findAll({
-      where: {
-        employee_id: { [Op.in]: employeeIds },
-        date: { [Op.between]: [saturdayDate, endDate] },
-      },
-    }),
-    Route.findAll({ where: { main_city_id: employee.city_id, user_id } }),
-  ]);
-
-  const routes = await attachOperatingDays(routesRaw);
-  const proposals = generateDw5Proposals(
-    citySchedulesRaw.map((s) => (s.toJSON ? s.toJSON() : s)),
-    user_id,
-    routes
-  );
-  return persistLabelProposals(proposals, user_id);
-};
 
 /**
  * PUT /api/schedule/update-cell
@@ -140,6 +158,8 @@ exports.updateScheduleCell = async (req, res) => {
       }
     }
 
+    let saturdayDw5Package = null;
+
     if (route_id && employee_id) {
       const dayEntries = await Schedule.findAll({ where: { date, employee_id } });
       const daySchedules = dayEntries.map((s) => (s.toJSON ? s.toJSON() : s));
@@ -162,16 +182,63 @@ exports.updateScheduleCell = async (req, res) => {
       }
       const routeWithDays = await enrichRouteWithOperatingDays(route);
       const userRoutes = await attachOperatingDays(await Route.findAll({ where: { user_id } }));
+      const cityEmployees = await Employee.findAll({
+        where: { city_id: employee.city_id, user_id },
+      });
 
-      if (!canEmployeeHaveAnotherRouteOnDay(employee_id, route_id, date, daySchedules, userRoutes)) {
+      if (isSaturday(date)) {
+        const endDate = addDaysToDate(date, 14);
+        const citySchedulesRaw = await Schedule.findAll({
+          where: {
+            employee_id: { [Op.in]: cityEmployees.map((e) => e.id) },
+            date: { [Op.between]: [date, endDate] },
+          },
+        });
+        const citySchedules = citySchedulesRaw.map((s) => (s.toJSON ? s.toJSON() : s));
+
+        saturdayDw5Package = planSaturdayDw5Package(
+          date,
+          employee_id,
+          citySchedules,
+          userRoutes,
+          cityEmployees.length,
+          user_id
+        );
+        if (!saturdayDw5Package) {
+          return res.status(400).json({
+            message:
+              'Brak wolnego dnia na DW5 w następnym tygodniu (pn → pt → inny dzień roboczy). ' +
+              'Trasa sobotnia wymaga DW5 — nie można przypisać samej trasy.',
+          });
+        }
+      }
+
+      const canTakeRoute =
+        canEmployeeHaveAnotherRouteOnDay(employee_id, route_id, date, daySchedules, userRoutes) ||
+        canEmployeeHaveAnotherRouteOnDay(employee_id, route_id, date, daySchedules, userRoutes, {
+          allowPairLeg: true,
+        });
+      if (!canTakeRoute) {
         return res.status(400).json({
           message: 'Pracownik ma już inną trasę tego dnia — nie można przypisać drugiej.',
         });
       }
 
       const pairedRoute = findPairRoute(routeWithDays, userRoutes);
-      if (!canAssignEmployeeToRoute(employee, routeWithDays, { pairedRoute, date, schedules: daySchedules, allRoutes: userRoutes })) {
-        const reason = getAssignmentBlockReason(employee, routeWithDays, { pairedRoute, date, schedules: daySchedules, allRoutes: userRoutes });
+      if (!canAssignEmployeeToRoute(employee, routeWithDays, {
+        pairedRoute,
+        date,
+        schedules: daySchedules,
+        allRoutes: userRoutes,
+        employeeCount: cityEmployees.length,
+      })) {
+        const reason = getAssignmentBlockReason(employee, routeWithDays, {
+          pairedRoute,
+          date,
+          schedules: daySchedules,
+          allRoutes: userRoutes,
+          employeeCount: cityEmployees.length,
+        });
         return res.status(400).json({
           message: reason || 'Pracownik nie spełnia wymagań trasy.',
         });
@@ -191,8 +258,8 @@ exports.updateScheduleCell = async (req, res) => {
       schedule = await Schedule.create({ date, employee_id, route_id: route_id ?? null, label: label ?? null, assignment_type, user_id });
     }
 
-    if (route_id && getIsoWeekday(date) === 6) {
-      await applyDw5AfterSaturdayRoute(employee_id, date, user_id);
+    if (saturdayDw5Package) {
+      await persistLabelProposals([saturdayDw5Package.labelProposal], user_id);
     }
 
     return res.json({ message: 'Grafik zaktualizowany', schedule });
@@ -427,9 +494,8 @@ exports.assignMonth = async (req, res) => {
 
     const routes = await attachOperatingDays(routesRaw);
     const route = routes.find((r) => r.id.toString() === routeId.toString()) || routeRaw;
-    const cityEmployeeIds = new Set(
-      (await Employee.findAll({ where: { city_id: cityId, user_id } })).map((e) => e.id.toString())
-    );
+    const cityEmployees = await Employee.findAll({ where: { city_id: cityId, user_id } });
+    const cityEmployeeIds = new Set(cityEmployees.map((e) => e.id.toString()));
     const citySchedules = schedules.filter((s) =>
       cityEmployeeIds.has(s.employee_id?.toString())
     ).map((s) => (s.toJSON ? s.toJSON() : s));
@@ -442,6 +508,7 @@ exports.assignMonth = async (req, res) => {
       month: monthNum,
       year: yearNum,
       user_id,
+      employees: cityEmployees.map((e) => (e.toJSON ? e.toJSON() : e)),
     });
 
     if (routeAssignments.length === 0 && labelAssignments.length === 0) {

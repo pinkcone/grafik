@@ -43,7 +43,12 @@ export const getAssignmentBlockReason = (employee, route, options = {}) => {
   }
 
   if (date && schedules && allRoutes.length > 0) {
-    if (!canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, schedules, allRoutes)) {
+    const canTake =
+      canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, schedules, allRoutes) ||
+      canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, schedules, allRoutes, {
+        allowPairLeg: true,
+      });
+    if (!canTake) {
       return 'Pracownik ma już inną trasę tego dnia — nie można przypisać drugiej.';
     }
   }

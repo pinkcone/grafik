@@ -5,7 +5,7 @@ import { saveAs } from 'file-saver';
 import { decorateWorksheet } from './elements/decorateWorksheet';
 import { canAssignEmployeeToRouteWithPair, getAssignmentBlockReason, findPairRoute, sortRoutesByAssignmentPriority } from '../utils/routeAssignment';
 import { hasEmployeeLabelOnDay } from '../utils/scheduleLabels';
-import { getEmployeeRouteSlotCountOnDay } from '../utils/scheduleConstraints';
+import { getEmployeeRouteSlotCountOnDay, canEmployeeHaveAnotherRouteOnDay } from '../utils/scheduleConstraints';
 import Popup from '../components/Popup';
 import '../styles/ScheduleView.css';
 import '../styles/ScheduleDayMenu.css';
@@ -537,7 +537,9 @@ function ScheduleView({ cityId }) {
 
     for (let d = 1; d <= dim; d++) {
       const date = `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const cells = monthSchedules.filter(s => s.employee_id === employeeId && s.date === date);
+      const cells = monthSchedules.filter(
+        s => s.employee_id?.toString() === employeeId.toString() && s.date === date
+      );
 
       for (const cell of cells) {
         if (cell.route_id) {
@@ -563,7 +565,9 @@ function ScheduleView({ cityId }) {
 
     for (let d = 1; d <= dim; d++) {
       const date = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const cells = schedules.filter(s => s.employee_id === employeeId && s.date === date);
+      const cells = schedules.filter(
+        s => s.employee_id?.toString() === employeeId.toString() && s.date === date
+      );
 
       for (const cell of cells) {
         if (cell.route_id) {
@@ -684,7 +688,7 @@ const handleExportXLSX = () => {
       'Godziny są rozkładane wg części etatu (pn–pt × 8h × etat).\n' +
       'Etykieta i trasa tego samego dnia się wykluczają.\n' +
       'Ten sam kierowca dostaje trasę na cały tydzień (z zastępstwem przy urlopach).\n' +
-      'Po pracy w sobotę dodawana jest etykieta DW5 (pn lub pt nast. tygodnia),\n' +
+      'Trasa sobotnia zawsze idzie w parze z etykietą DW5 (pn → pt → inny dzień roboczy nast. tygodnia).\n' +
       'ale tylko gdy w tym dniu wszystkie trasy mają już kierowcę.\n' +
       'Etykiety (urlopy itd.) nie zostaną zmienione.'
     );
@@ -724,7 +728,7 @@ const handleExportXLSX = () => {
       `Przypisać ${employee?.last_name} ${employee?.first_name} na trasę „${route?.name}” ` +
       `na cały ${month}.${year}?\n\n` +
       'Tylko wolne dni kursowania tej trasy, bez nadpisywania istniejących przypisań.\n' +
-      'Po sobotach na trasie zostanie dodana etykieta DW5 (pn/pt nast. tygodnia),\n' +
+      'Trasy sobotnie zawsze z DW5 (pn → pt → inny dzień roboczy nast. tygodnia).\n' +
       'jeśli w tym dniu nie zostanie żadna trasa bez kierowcy.'
     );
     if (!ok) return;
@@ -773,7 +777,9 @@ const handleExportXLSX = () => {
       const row = [`${emp.last_name} ${emp.first_name}`];
       days.forEach(day => {
         const date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        const cells = schedules.filter(s => s.employee_id === emp.id && s.date === date);
+        const cells = schedules.filter(
+          s => s.employee_id?.toString() === emp.id.toString() && s.date === date
+        );
         const parts = [];
         for (const cell of cells) {
           if (cell.route_id) {
@@ -864,26 +870,6 @@ const prepareRoutesSheet = () => {
   const getAvailableEmployeesForRouteCell = (routeId, day) => {
     const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-    // Zbierz ID tras z pary (ta + powiązana)
-    const pairIds = new Set(getPairRouteIdsIncludingSelf(routeId).map(String));
-
-    // Mapa: route_id -> set(employee_id) tego dnia
-    const assignedByRoute = schedules
-      .filter(s => s.date === date && s.route_id)
-      .reduce((map, s) => {
-        const rid = s.route_id.toString();
-        if (!map.has(rid)) map.set(rid, new Set());
-        map.get(rid).add(s.employee_id.toString());
-        return map;
-      }, new Map());
-
-    // Zbiór wszystkich pracowników przypisanych do jakiejkolwiek trasy tego dnia
-    const assignedAnywhere = new Set(
-      schedules
-        .filter(s => s.date === date && s.route_id)
-        .map(s => s.employee_id.toString())
-    );
-
     const route = routes.find(r => r.id.toString() === routeId.toString());
     if (!route) {
       return [{ value: '', label: '-- brak --' }];
@@ -893,18 +879,14 @@ const prepareRoutesSheet = () => {
       { value: "", label: "-- brak --" },
       ...employees
         .filter(emp => {
-          const empId = emp.id.toString();
-
           if (hasEmployeeLabelOnDay(emp.id, date, schedules)) return false;
           if (!canAssignEmployeeToRouteWithPair(emp, route, routes, date, schedules)) return false;
-
-          // Jeśli pracownik jest już na którejś trasie z pary → dopuść (żeby móc edytować)
-          for (const rid of pairIds) {
-            if (assignedByRoute.get(rid)?.has(empId)) return true;
-          }
-
-          // W przeciwnym razie – dopuść tylko, jeśli NIE jest przypisany nigdzie indziej tego dnia
-          return !assignedAnywhere.has(empId);
+          return (
+            canEmployeeHaveAnotherRouteOnDay(emp.id, routeId, date, schedules, routes) ||
+            canEmployeeHaveAnotherRouteOnDay(emp.id, routeId, date, schedules, routes, {
+              allowPairLeg: true,
+            })
+          );
         })
         .map(emp => ({
           value: emp.id,
@@ -915,7 +897,9 @@ const prepareRoutesSheet = () => {
 
   /*** === NOWE helpery dla widoku pracowników (multi-wpisy) === ***/
   const getCellSchedulesAll = (employeeId, date) =>
-    schedules.filter(s => s.employee_id === employeeId && s.date === date);
+    schedules.filter(
+      s => s.employee_id?.toString() === employeeId.toString() && s.date === date
+    );
 
   const buildDisplayOptionForEntry = (entry) => {
     if (entry.route_id) {

@@ -1,4 +1,5 @@
 const { getIsoWeekday, isRouteOperatingOnDate } = require('./routeOperatingDays');
+const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 
 const DW5_LABEL_CODE = 'DW5';
 
@@ -34,21 +35,6 @@ const routeHasSegments = (route) => {
 const findRouteAssignment = (date, routeId, schedules) =>
   schedules.find((s) => s.date === date && s.route_id?.toString() === routeId.toString());
 
-/** Czy w danym dniu zostaje choć jedna trasa bez kierowcy */
-const hasUnfilledRoutesOnDay = (date, routes, schedules) => {
-  if (!Array.isArray(routes) || routes.length === 0) return true;
-
-  return routes.some((route) => {
-    if (!routeHasSegments(route)) return false;
-    if (!routeRequiresStaffing(route)) return false;
-    if (!isRouteOperatingOnDate(route, date)) return false;
-    return !findRouteAssignment(date, route.id, schedules);
-  });
-};
-
-const isDayReadyForDw5 = (date, routes, schedules) =>
-  !hasUnfilledRoutesOnDay(date, routes, schedules);
-
 const isSaturday = (dateStr) => dateStr && getIsoWeekday(dateStr) === 6;
 
 const buildDate = (year, month, day) =>
@@ -59,6 +45,137 @@ const addDays = (dateStr, days) => {
   const dt = new Date(y, m - 1, d);
   dt.setDate(dt.getDate() + days);
   return buildDate(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
+};
+
+const getNextWeekMonday = (dateStr) => addDays(dateStr, 8 - getIsoWeekday(dateStr));
+
+/** Kolejność: poniedziałek, piątek, wt–czw */
+const getDw5CandidateWeekdays = (saturdayDate) => {
+  const monday = getNextWeekMonday(saturdayDate);
+  return [
+    monday,
+    addDays(monday, 4),
+    addDays(monday, 1),
+    addDays(monday, 2),
+    addDays(monday, 3),
+  ];
+};
+
+/** Trasy z requires_staffing=false (opcjonalne) nie wchodzą w licznik — mogą zostać puste. */
+const countMandatoryOperatingRoutes = (date, routes) => {
+  if (!Array.isArray(routes)) return 0;
+  return routes.filter(
+    (route) =>
+      routeHasSegments(route) &&
+      routeRequiresStaffing(route) &&
+      isRouteOperatingOnDate(route, date)
+  ).length;
+};
+
+/** Czy da się obsadzić wszystkie obowiązkowe trasy (opcjonalne ignorujemy). */
+const isDayStructurallyStaffable = (date, routes, employeeCount) => {
+  if (!employeeCount || employeeCount <= 0) return false;
+  return countMandatoryOperatingRoutes(date, routes) <= employeeCount;
+};
+
+const hasEmployeeRouteOnDay = (employeeId, date, schedules) =>
+  schedules.some(
+    (s) =>
+      s.employee_id?.toString() === employeeId.toString() &&
+      s.date === date &&
+      s.route_id
+  );
+
+const employeeDayKey = (date, employeeId) => `${date}|${employeeId}`;
+
+const isEmployeeDayBlockedForDw5 = (employeeId, date, schedules, initialEmployeeDays = null) => {
+  if (initialEmployeeDays?.has(employeeDayKey(date, employeeId))) return true;
+  if (hasEmployeeRouteOnDay(employeeId, date, schedules)) return true;
+  if (hasEmployeeLabelOnDay(employeeId, date, schedules)) return true;
+  return false;
+};
+
+/**
+ * Wybiera dzień DW5 w następnym tygodniu po sobocie.
+ * pn → pt → wt → śr → czw.
+ * Dzień musi być wykonalny: tylko trasy obowiązkowe ≤ liczba kierowców (opcjonalne nie liczą się).
+ * Pracownik musi mieć ten dzień wolny.
+ */
+const pickDw5Date = (saturdayDate, employeeId, schedules, routes, employeeCount, options = {}) => {
+  const { initialEmployeeDays = null } = options;
+  const activeRoutes = routes.filter(routeHasSegments);
+  const candidates = getDw5CandidateWeekdays(saturdayDate);
+
+  for (const date of candidates) {
+    if (!isDayStructurallyStaffable(date, activeRoutes, employeeCount)) continue;
+    if (isEmployeeDayBlockedForDw5(employeeId, date, schedules, initialEmployeeDays)) continue;
+    return date;
+  }
+
+  return null;
+};
+
+const hasDw5AfterSaturday = (employeeId, saturdayDate, schedules) => {
+  const candidates = getDw5CandidateWeekdays(saturdayDate);
+  return candidates.some((date) =>
+    hasEmployeeLabelOnDay(employeeId, date, schedules, DW5_LABEL_CODE)
+  );
+};
+
+const canAssignSaturdayRouteWithDw5 = (
+  saturdayDate,
+  employeeId,
+  schedules,
+  routes,
+  employeeCount,
+  options = {}
+) => pickDw5Date(saturdayDate, employeeId, schedules, routes, employeeCount, options) != null;
+
+const buildDw5LabelProposal = (dw5Date, employeeId, user_id) => ({
+  date: dw5Date,
+  employee_id: employeeId,
+  route_id: null,
+  label: DW5_LABEL_CODE,
+  assignment_type: 'label',
+  user_id,
+});
+
+const buildDw5ScheduleEntry = (dw5Date, employeeId, user_id) => ({
+  date: dw5Date,
+  employee_id: employeeId,
+  route_id: null,
+  label: DW5_LABEL_CODE,
+  assignment_type: 'label',
+  user_id,
+});
+
+/** Trasa sobotnia + DW5 to jeden pakiet — zwraca propozycję etykiety lub null */
+const planSaturdayDw5Package = (
+  saturdayDate,
+  employeeId,
+  schedules,
+  routes,
+  employeeCount,
+  user_id,
+  options = {}
+) => {
+  if (!isSaturday(saturdayDate)) return null;
+
+  const dw5Date = pickDw5Date(
+    saturdayDate,
+    employeeId,
+    schedules,
+    routes,
+    employeeCount,
+    options
+  );
+  if (!dw5Date) return null;
+
+  return {
+    dw5Date,
+    labelProposal: buildDw5LabelProposal(dw5Date, employeeId, user_id),
+    scheduleEntry: buildDw5ScheduleEntry(dw5Date, employeeId, user_id),
+  };
 };
 
 const getSaturdayAssignmentBlockReason = (employee, route, dateStr, labelPrefix = 'Trasa') => {
@@ -78,46 +195,46 @@ const getSaturdayAssignmentBlockReason = (employee, route, dateStr, labelPrefix 
   return null;
 };
 
-const getNextWeekMonday = (dateStr) => addDays(dateStr, 8 - getIsoWeekday(dateStr));
+const getSaturdayDw5BlockReason = (
+  employee,
+  saturdayDate,
+  schedules,
+  routes,
+  employeeCount,
+  options = {}
+) => {
+  if (!employee || !saturdayDate || !isSaturday(saturdayDate)) return null;
 
-const getFridayOfWeek = (mondayStr) => addDays(mondayStr, 4);
+  if (
+    canAssignSaturdayRouteWithDw5(
+      saturdayDate,
+      employee.id,
+      schedules,
+      routes,
+      employeeCount,
+      options
+    )
+  ) {
+    return null;
+  }
 
-const hasEmployeeRouteOnDay = (employeeId, date, schedules) =>
-  schedules.some(
-    (s) =>
-      s.employee_id?.toString() === employeeId.toString() &&
-      s.date === date &&
-      s.route_id
+  return (
+    'Brak wolnego dnia na DW5 w następnym tygodniu (pn → pt → inny dzień roboczy). ' +
+    'Trasa sobotnia wymaga DW5 — nie można przypisać samej trasy.'
   );
-
-const hasEmployeeLabelOnDay = (employeeId, date, schedules, labelCode = null) =>
-  schedules.some((s) => {
-    if (s.employee_id?.toString() !== employeeId.toString() || s.date !== date || !s.label) {
-      return false;
-    }
-    if (labelCode) return s.label === labelCode;
-    return true;
-  });
-
-const pickDw5Date = (saturdayDate, employeeId, schedules, routes) => {
-  const monday = getNextWeekMonday(saturdayDate);
-  const friday = getFridayOfWeek(monday);
-
-  const isCandidateDay = (date) =>
-    !hasEmployeeRouteOnDay(employeeId, date, schedules) &&
-    !hasEmployeeLabelOnDay(employeeId, date, schedules) &&
-    isDayReadyForDw5(date, routes, schedules);
-
-  if (isCandidateDay(monday)) return monday;
-  if (isCandidateDay(friday)) return friday;
-  return null;
 };
 
-const generateDw5Proposals = (schedules, user_id, routes = []) => {
+/** Uzupełnia DW5 dla sobot z trasą, które jeszcze nie mają powiązanego DW5 */
+const generateDw5Proposals = (schedules, user_id, routes = [], employeeCount = 0) => {
   const activeRoutes = routes.filter(routeHasSegments);
   const proposals = [];
   const working = schedules.map((s) => ({ ...s }));
   const seen = new Set();
+
+  const staffCount =
+    employeeCount > 0
+      ? employeeCount
+      : new Set(schedules.map((s) => s.employee_id).filter(Boolean)).size;
 
   for (const entry of schedules) {
     if (!entry.route_id || !isSaturday(entry.date)) continue;
@@ -127,27 +244,16 @@ const generateDw5Proposals = (schedules, user_id, routes = []) => {
     if (seen.has(satKey)) continue;
     seen.add(satKey);
 
-    const dw5Date = pickDw5Date(entry.date, empId, working, activeRoutes);
+    if (hasDw5AfterSaturday(entry.employee_id, entry.date, working)) continue;
+
+    const dw5Date = pickDw5Date(entry.date, empId, working, activeRoutes, staffCount);
     if (!dw5Date) continue;
 
     const dw5Key = `dw5-${empId}-${dw5Date}`;
     if (seen.has(dw5Key)) continue;
-    if (hasEmployeeLabelOnDay(empId, dw5Date, working, DW5_LABEL_CODE)) continue;
 
-    proposals.push({
-      date: dw5Date,
-      employee_id: entry.employee_id,
-      route_id: null,
-      label: DW5_LABEL_CODE,
-      assignment_type: 'label',
-      user_id,
-    });
-    working.push({
-      date: dw5Date,
-      employee_id: entry.employee_id,
-      route_id: null,
-      label: DW5_LABEL_CODE,
-    });
+    proposals.push(buildDw5LabelProposal(dw5Date, entry.employee_id, user_id));
+    working.push(buildDw5ScheduleEntry(dw5Date, entry.employee_id, user_id));
     seen.add(dw5Key);
   }
 
@@ -158,9 +264,14 @@ module.exports = {
   DW5_LABEL_CODE,
   isSaturday,
   getSaturdayAssignmentBlockReason,
+  getSaturdayDw5BlockReason,
   routeHasSegments,
-  hasUnfilledRoutesOnDay,
-  isDayReadyForDw5,
+  countMandatoryOperatingRoutes,
+  isDayStructurallyStaffable,
+  getDw5CandidateWeekdays,
   pickDw5Date,
+  canAssignSaturdayRouteWithDw5,
+  planSaturdayDw5Package,
+  hasDw5AfterSaturday,
   generateDw5Proposals,
 };
