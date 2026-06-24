@@ -1,5 +1,6 @@
 const { canDriveWithCategory } = require('./licenseCategories');
 const { getOperatingDayBlockReason } = require('./routeOperatingDays');
+const { getSaturdayAssignmentBlockReason } = require('./scheduleRules');
 
 const toBoolean = (value) => {
   if (value === true || value === 1 || value === '1' || value === 'true') return true;
@@ -35,6 +36,19 @@ const getAssignmentBlockReason = (employee, route, options = {}) => {
   if (pairedRoute) {
     const pairDayReason = getOperatingDayBlockReason(pairedRoute, date, 'Trasa powiązana');
     if (pairDayReason) return pairDayReason;
+  }
+
+  const saturdayReason = getSaturdayAssignmentBlockReason(employee, route, date);
+  if (saturdayReason) return saturdayReason;
+
+  if (pairedRoute) {
+    const pairSaturdayReason = getSaturdayAssignmentBlockReason(
+      employee,
+      pairedRoute,
+      date,
+      'Trasa powiązana'
+    );
+    if (pairSaturdayReason) return pairSaturdayReason;
   }
 
   const requiredCategory = route.required_license_category || 'B';

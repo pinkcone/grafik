@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { decorateWorksheet } from './elements/decorateWorksheet';
 import { canAssignEmployeeToRouteWithPair, getAssignmentBlockReason, findPairRoute, sortRoutesByAssignmentPriority } from '../utils/routeAssignment';
+import Popup from '../components/Popup';
 import '../styles/ScheduleView.css';
 import '../styles/ScheduleDayMenu.css';
 
@@ -30,6 +31,11 @@ function ScheduleView({ cityId }) {
   const dayMenuDropdownRef = useRef(null);
 
   const [openDayMenu, setOpenDayMenu] = useState(null);
+
+  const [assignMonthOpen, setAssignMonthOpen] = useState(false);
+  const [assignMonthEmployeeId, setAssignMonthEmployeeId] = useState('');
+  const [assignMonthRouteId, setAssignMonthRouteId] = useState('');
+  const [assignMonthLoading, setAssignMonthLoading] = useState(false);
 
   const [quarterSchedules, setQuarterSchedules] = useState({});
 
@@ -624,13 +630,13 @@ const handleExportXLSX = () => {
 
   const handleClearMonth = async () => {
     const prefix = `${year}-${String(month).padStart(2, '0')}`;
-    const count = schedules.filter((s) => s.date.startsWith(prefix)).length;
+    const routeCount = schedules.filter((s) => s.date.startsWith(prefix) && s.route_id).length;
 
     const ok = window.confirm(
-      `Wyczyścić cały grafik za ${month}.${year}?\n` +
-      (count > 0
-        ? `Usunie ${count} wpis(ów) (trasy i etykiety) dla pracowników tego miasta.`
-        : 'Brak wpisów w tym miesiącu.')
+      `Wyczyścić trasy za ${month}.${year}?\n` +
+      (routeCount > 0
+        ? `Usunie ${routeCount} przypisań tras. Etykiety (urlopy, DW itd.) zostaną.`
+        : 'Brak tras do usunięcia w tym miesiącu.')
     );
     if (!ok) return;
 
@@ -659,7 +665,10 @@ const handleExportXLSX = () => {
     const ok = window.confirm(
       'Uzupełnić puste sloty tras w tym miesiącu?\n\n' +
       'Najpierw przypisane zostaną trasy wymagające kat. C i specjalnych uprawnień.\n' +
-      'Etykiety (urlopy, DW itd.) nie zostaną zmienione.'
+      'Ten sam kierowca dostaje trasę na cały tydzień (z zastępstwem przy urlopach).\n' +
+      'Po pracy w sobotę dodawana jest etykieta DW5 (pn lub pt nast. tygodnia),\n' +
+      'ale tylko gdy w tym dniu wszystkie trasy mają już kierowcę.\n' +
+      'Etykiety (urlopy itd.) nie zostaną zmienione.'
     );
     if (!ok) return;
 
@@ -681,6 +690,58 @@ const handleExportXLSX = () => {
       await fetchQuarterSchedules();
     } catch (error) {
       alert(`Nie udało się uzupełnić grafiku: ${error.message}`);
+    }
+  };
+
+  const handleAssignMonth = async (e) => {
+    e.preventDefault();
+    if (!assignMonthEmployeeId || !assignMonthRouteId) {
+      alert('Wybierz pracownika i trasę.');
+      return;
+    }
+
+    const employee = employees.find((emp) => emp.id.toString() === assignMonthEmployeeId);
+    const route = routes.find((rt) => rt.id.toString() === assignMonthRouteId);
+    const ok = window.confirm(
+      `Przypisać ${employee?.last_name} ${employee?.first_name} na trasę „${route?.name}” ` +
+      `na cały ${month}.${year}?\n\n` +
+      'Tylko wolne dni kursowania tej trasy, bez nadpisywania istniejących przypisań.\n' +
+      'Po sobotach na trasie zostanie dodana etykieta DW5 (pn/pt nast. tygodnia),\n' +
+      'jeśli w tym dniu nie zostanie żadna trasa bez kierowcy.'
+    );
+    if (!ok) return;
+
+    setAssignMonthLoading(true);
+    try {
+      const res = await fetch(
+        `/api/schedule/city/${cityId}/assign-month?month=${month}&year=${year}`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            employee_id: Number(assignMonthEmployeeId),
+            route_id: Number(assignMonthRouteId),
+          }),
+          cache: 'no-store',
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || `HTTP ${res.status}`);
+      }
+      alert(data.message || `Przypisano ${data.created || 0} dni.`);
+      setAssignMonthOpen(false);
+      setAssignMonthEmployeeId('');
+      setAssignMonthRouteId('');
+      await fetchSchedule();
+      await fetchQuarterSchedules();
+    } catch (error) {
+      alert(`Nie udało się przypisać trasy: ${error.message}`);
+    } finally {
+      setAssignMonthLoading(false);
     }
   };
 
@@ -917,10 +978,58 @@ const prepareRoutesSheet = () => {
         <button type="button" className="btn-primary" onClick={handleAutoFillRoutes}>
           Uzupełnij trasy
         </button>
+        <button type="button" className="btn-primary" onClick={() => setAssignMonthOpen(true)}>
+          Przypisz na cały miesiąc
+        </button>
         <button type="button" className="btn-danger" onClick={handleClearMonth}>
-          Wyczyść miesiąc
+          Wyczyść trasy miesiąca
         </button>
       </div>
+
+      <Popup isOpen={assignMonthOpen} onClose={() => !assignMonthLoading && setAssignMonthOpen(false)}>
+        <h3>Przypisz na cały miesiąc</h3>
+        <form onSubmit={handleAssignMonth} style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 320 }}>
+          <div>
+            <label>Pracownik:</label>
+            <select
+              value={assignMonthEmployeeId}
+              onChange={(e) => setAssignMonthEmployeeId(e.target.value)}
+              required
+            >
+              <option value="">-- wybierz --</option>
+              {employees.map((emp) => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.last_name} {emp.first_name}
+                  {emp.license_category ? ` [${emp.license_category}]` : ''}
+                  {emp.special_permissions ? ' [SP]' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label>Trasa:</label>
+            <select
+              value={assignMonthRouteId}
+              onChange={(e) => setAssignMonthRouteId(e.target.value)}
+              required
+            >
+              <option value="">-- wybierz --</option>
+              {sortRoutesByAssignmentPriority(routes).map((rt) => (
+                <option key={rt.id} value={rt.id}>
+                  {rt.name} ({calculateDuration(rt).toFixed(2)}h)
+                </option>
+              ))}
+            </select>
+          </div>
+          <p style={{ margin: 0, fontSize: '0.9em', opacity: 0.85 }}>
+            Przypisanie obejmuje każdy dzień kursowania trasy w {month}.{year},
+            gdy slot trasy jest wolny i pracownik nie ma innej trasy ani etykiety.
+          </p>
+          <button type="submit" className="btn-primary" disabled={assignMonthLoading}>
+            {assignMonthLoading ? 'Przypisywanie…' : 'Przypisz'}
+          </button>
+        </form>
+      </Popup>
 
       <div style={{ marginBottom: '10px' }}>
         <label>Miesiąc: </label>

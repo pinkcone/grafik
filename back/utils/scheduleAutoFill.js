@@ -5,6 +5,7 @@ const {
   compareEmployeesForRoute,
 } = require('./routeAssignment');
 const { isRouteOperatingOnDate } = require('./routeOperatingDays');
+const { generateDw5Proposals } = require('./scheduleRules');
 
 const daysInMonth = (month, year) => new Date(year, month, 0).getDate();
 
@@ -374,7 +375,9 @@ function generateAutoFillAssignments({ employees, routes, schedules, month, year
     }
   }
 
-  return assignments;
+  const labelAssignments = generateDw5Proposals(workingSchedules, user_id, routes);
+
+  return { routeAssignments: assignments, labelAssignments };
 }
 
 module.exports = {

@@ -12,6 +12,7 @@ router.put('/update-cell', scheduleController.updateScheduleCell);
 // GET /api/schedule/city/:cityId
 router.get('/city/:cityId', scheduleController.getCitySchedule);
 router.post('/city/:cityId/auto-fill', scheduleController.autoFillRoutes);
+router.post('/city/:cityId/assign-month', scheduleController.assignMonth);
 router.delete('/city/:cityId/month', scheduleController.clearMonth);
 router.delete('/:id', scheduleController.deleteScheduleById);
 module.exports = router;
