@@ -8,6 +8,7 @@ const { generateMonthRouteAssignments } = require('../utils/assignMonth');
 const { generateDw5Proposals } = require('../utils/scheduleRules');
 const { getIsoWeekday } = require('../utils/routeOperatingDays');
 const { hasEmployeeLabelOnDay } = require('../utils/scheduleLabels');
+const { canEmployeeHaveAnotherRouteOnDay } = require('../utils/scheduleConstraints');
 
 const parseWorkingHours = (wh) => {
   if (!wh) return null;
@@ -130,6 +131,15 @@ exports.updateScheduleCell = async (req, res) => {
 
     const user_id = req.user.id;
 
+    if (label && employee_id) {
+      const dayEntries = await Schedule.findAll({ where: { date, employee_id } });
+      if (dayEntries.some((s) => s.route_id)) {
+        return res.status(400).json({
+          message: 'Pracownik ma trasę tego dnia — usuń trasę przed dodaniem etykiety.',
+        });
+      }
+    }
+
     if (route_id && employee_id) {
       const dayEntries = await Schedule.findAll({ where: { date, employee_id } });
       const daySchedules = dayEntries.map((s) => (s.toJSON ? s.toJSON() : s));
@@ -152,9 +162,16 @@ exports.updateScheduleCell = async (req, res) => {
       }
       const routeWithDays = await enrichRouteWithOperatingDays(route);
       const userRoutes = await attachOperatingDays(await Route.findAll({ where: { user_id } }));
+
+      if (!canEmployeeHaveAnotherRouteOnDay(employee_id, route_id, date, daySchedules, userRoutes)) {
+        return res.status(400).json({
+          message: 'Pracownik ma już inną trasę tego dnia — nie można przypisać drugiej.',
+        });
+      }
+
       const pairedRoute = findPairRoute(routeWithDays, userRoutes);
-      if (!canAssignEmployeeToRoute(employee, routeWithDays, { pairedRoute, date, schedules: daySchedules })) {
-        const reason = getAssignmentBlockReason(employee, routeWithDays, { pairedRoute, date, schedules: daySchedules });
+      if (!canAssignEmployeeToRoute(employee, routeWithDays, { pairedRoute, date, schedules: daySchedules, allRoutes: userRoutes })) {
+        const reason = getAssignmentBlockReason(employee, routeWithDays, { pairedRoute, date, schedules: daySchedules, allRoutes: userRoutes });
         return res.status(400).json({
           message: reason || 'Pracownik nie spełnia wymagań trasy.',
         });

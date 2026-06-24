@@ -2,6 +2,9 @@ const { findPairRoute, canAssignEmployeeToRouteWithPair } = require('./routeAssi
 const { isRouteOperatingOnDate } = require('./routeOperatingDays');
 const { generateDw5Proposals } = require('./scheduleRules');
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
+const { canEmployeeHaveAnotherRouteOnDay } = require('./scheduleConstraints');
+const { wouldExceedTargetHours } = require('./scheduleHours');
+const { canEmployeeTakeRouteOnDay } = require('./scheduleAutoFill');
 
 const daysInMonth = (month, year) => new Date(year, month, 0).getDate();
 
@@ -10,33 +13,6 @@ const buildDate = (year, month, day) =>
 
 const findRouteAssignment = (date, routeId, schedules) =>
   schedules.find((s) => s.date === date && s.route_id?.toString() === routeId.toString());
-
-const getPairRouteIdsIncludingSelf = (routeId, routes) => {
-  const idStr = routeId.toString();
-  const rt = routes.find((r) => r.id.toString() === idStr);
-  if (!rt) return [idStr];
-
-  const pair = new Set([idStr]);
-  if (rt.linked_route_id != null) {
-    pair.add(rt.linked_route_id.toString());
-  }
-  routes.forEach((r) => {
-    if (r.linked_route_id != null && r.linked_route_id.toString() === idStr) {
-      pair.add(r.id.toString());
-    }
-  });
-  return Array.from(pair);
-};
-
-const isEmployeeBusyOnDay = (employeeId, date, schedules, routes, routeIdForPair) => {
-  const pairIds = new Set(getPairRouteIdsIncludingSelf(routeIdForPair, routes).map(String));
-
-  return schedules.some((s) => {
-    if (s.date !== date || !s.route_id) return false;
-    if (s.employee_id?.toString() !== employeeId.toString()) return false;
-    return !pairIds.has(s.route_id.toString());
-  });
-};
 
 const pushRouteAssignment = (assignments, workingSchedules, { date, route_id, employee_id, user_id }) => {
   assignments.push({ date, route_id, employee_id, user_id });
@@ -68,9 +44,13 @@ function generateMonthRouteAssignments({
     const date = buildDate(year, month, day);
     if (!isRouteOperatingOnDate(route, date)) continue;
     if (findRouteAssignment(date, route.id, workingSchedules)) continue;
-    if (!canAssignEmployeeToRouteWithPair(employee, route, routes, date, workingSchedules)) continue;
     if (hasEmployeeLabelOnDay(employee.id, date, workingSchedules)) continue;
-    if (isEmployeeBusyOnDay(employee.id, date, workingSchedules, routes, route.id)) continue;
+    if (!canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, workingSchedules, routes)) {
+      continue;
+    }
+    if (!canEmployeeTakeRouteOnDay(employee, route, routes, date, workingSchedules, month, year)) {
+      continue;
+    }
 
     pushRouteAssignment(routeAssignments, workingSchedules, {
       date,
@@ -83,7 +63,8 @@ function generateMonthRouteAssignments({
       if (
         canAssignEmployeeToRouteWithPair(employee, pairRoute, routes, date, workingSchedules) &&
         !hasEmployeeLabelOnDay(employee.id, date, workingSchedules) &&
-        !isEmployeeBusyOnDay(employee.id, date, workingSchedules, routes, pairRoute.id)
+        canEmployeeHaveAnotherRouteOnDay(employee.id, pairRoute.id, date, workingSchedules, routes) &&
+        !wouldExceedTargetHours(employee, pairRoute, workingSchedules, routes, month, year)
       ) {
         pushRouteAssignment(routeAssignments, workingSchedules, {
           date,

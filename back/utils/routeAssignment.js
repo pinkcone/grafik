@@ -2,6 +2,7 @@ const { canDriveWithCategory } = require('./licenseCategories');
 const { getOperatingDayBlockReason } = require('./routeOperatingDays');
 const { getSaturdayAssignmentBlockReason } = require('./scheduleRules');
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
+const { canEmployeeHaveAnotherRouteOnDay } = require('./scheduleConstraints');
 
 const toBoolean = (value) => {
   if (value === true || value === 1 || value === '1' || value === 'true') return true;
@@ -32,7 +33,7 @@ const findPairRoute = (route, allRoutes = []) => {
 };
 
 const getAssignmentBlockReason = (employee, route, options = {}) => {
-  const { pairedRoute = null, date = null, schedules = null } = options;
+  const { pairedRoute = null, date = null, schedules = null, allRoutes = [] } = options;
 
   if (!employee || !route) {
     return 'Brak danych pracownika lub trasy.';
@@ -40,6 +41,12 @@ const getAssignmentBlockReason = (employee, route, options = {}) => {
 
   if (date && schedules && hasEmployeeLabelOnDay(employee.id, date, schedules)) {
     return 'Pracownik ma wpisaną etykietę tego dnia — nie można przypisać trasy.';
+  }
+
+  if (date && schedules && allRoutes.length > 0) {
+    if (!canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, schedules, allRoutes)) {
+      return 'Pracownik ma już inną trasę tego dnia — nie można przypisać drugiej.';
+    }
   }
 
   const dayReason = getOperatingDayBlockReason(route, date);
@@ -93,7 +100,7 @@ const canAssignEmployeeToRoute = (employee, route, options = {}) => {
 
 const canAssignEmployeeToRouteWithPair = (employee, route, allRoutes = [], date = null, schedules = null) => {
   const pairedRoute = findPairRoute(route, allRoutes);
-  return canAssignEmployeeToRoute(employee, route, { pairedRoute, date, schedules });
+  return canAssignEmployeeToRoute(employee, route, { pairedRoute, date, schedules, allRoutes });
 };
 
 /** Wyższy tier = trudniejsza trasa → uzupełniać wcześniej */

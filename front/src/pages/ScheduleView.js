@@ -5,6 +5,7 @@ import { saveAs } from 'file-saver';
 import { decorateWorksheet } from './elements/decorateWorksheet';
 import { canAssignEmployeeToRouteWithPair, getAssignmentBlockReason, findPairRoute, sortRoutesByAssignmentPriority } from '../utils/routeAssignment';
 import { hasEmployeeLabelOnDay } from '../utils/scheduleLabels';
+import { getEmployeeRouteSlotCountOnDay } from '../utils/scheduleConstraints';
 import Popup from '../components/Popup';
 import '../styles/ScheduleView.css';
 import '../styles/ScheduleDayMenu.css';
@@ -177,6 +178,7 @@ function ScheduleView({ cityId }) {
       pairedRoute: findPairRoute(route, routes),
       date,
       schedules,
+      allRoutes: routes,
     });
     if (reason) {
       throw new Error(reason);
@@ -314,6 +316,10 @@ function ScheduleView({ cityId }) {
         label: `${l.code}`
       }));
       return [{ value: '', label: '-- brak --' }, ...labelOptions];
+    }
+
+    if (getEmployeeRouteSlotCountOnDay(employeeId, date, schedules, routes) > 0) {
+      return [{ value: '', label: '-- brak --' }];
     }
 
     const availableRoutes = sortRoutesByAssignmentPriority(
@@ -674,8 +680,9 @@ const handleExportXLSX = () => {
   const handleAutoFillRoutes = async () => {
     const ok = window.confirm(
       'Uzupełnić puste sloty tras w tym miesiącu?\n\n' +
-      'Najpierw każdy kierowca dostaje po jednej trasie dziennie, dopiero potem uzupełniane są resztki.\n' +
-      'Ręcznie wpisane trasy nie są zmieniane ani usuwane.\n' +
+      'Najpierw każdy wolny kierowca dostaje po jednej trasie dziennie (bez drugiej trasy).\n' +
+      'Godziny są rozkładane wg części etatu (pn–pt × 8h × etat).\n' +
+      'Etykieta i trasa tego samego dnia się wykluczają.\n' +
       'Ten sam kierowca dostaje trasę na cały tydzień (z zastępstwem przy urlopach).\n' +
       'Po pracy w sobotę dodawana jest etykieta DW5 (pn lub pt nast. tygodnia),\n' +
       'ale tylko gdy w tym dniu wszystkie trasy mają już kierowcę.\n' +
@@ -888,6 +895,7 @@ const prepareRoutesSheet = () => {
         .filter(emp => {
           const empId = emp.id.toString();
 
+          if (hasEmployeeLabelOnDay(emp.id, date, schedules)) return false;
           if (!canAssignEmployeeToRouteWithPair(emp, route, routes, date, schedules)) return false;
 
           // Jeśli pracownik jest już na którejś trasie z pary → dopuść (żeby móc edytować)
