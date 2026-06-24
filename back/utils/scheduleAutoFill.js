@@ -3,6 +3,8 @@ const {
   canAssignEmployeeToRouteWithPair,
   routeRequiresStaffing,
   getAssignmentBlockReason,
+  getEmployeeCapabilityTier,
+  getRouteRestrictionTierWithPair,
 } = require('./routeAssignment');
 const { isRouteOperatingOnDate } = require('./routeOperatingDays');
 const { generateDw5Proposals, isSaturday, planSaturdayDw5Package } = require('./scheduleRules');
@@ -467,11 +469,83 @@ const balanceEmployeeMonth = (employee, ctx) => {
   }
 };
 
+/**
+ * Zamiana wg uprawnień: trasa wymagająca uprawnień została pusta, a wolni pracownicy
+ * jej nie wezmą. Jeśli ktoś z uprawnieniami jeździ tego dnia trasę, która ich NIE
+ * wymaga — przesadzamy go na trudną trasę, a jego prostszą trasę oddajemy wolnemu.
+ */
+const tryCapabilitySwapForRoute = (route, date, ctx) => {
+  const freeEmployees = ctx.employees
+    .filter((e) => isEmployeeDayFreeForRoute(e.id, date, ctx))
+    .sort((a, b) => getEmployeeCapabilityTier(a) - getEmployeeCapabilityTier(b));
+  if (freeEmployees.length === 0) return false;
+
+  const occupiedEntries = ctx.workingSchedules
+    .filter(
+      (s) =>
+        s.date === date &&
+        s.route_id &&
+        s.route_id.toString() !== route.id.toString() &&
+        isRouteSlotSwappable(date, s.route_id, ctx.initialRouteSlots)
+    )
+    .map((s) => {
+      const occupant = ctx.employees.find(
+        (e) => e.id.toString() === s.employee_id?.toString()
+      );
+      const currentRoute = ctx.routes.find(
+        (r) => r.id.toString() === s.route_id.toString()
+      );
+      return { occupant, currentRoute };
+    })
+    .filter(({ occupant, currentRoute }) => occupant && currentRoute)
+    .sort((a, b) => {
+      const capDiff =
+        getEmployeeCapabilityTier(b.occupant) - getEmployeeCapabilityTier(a.occupant);
+      if (capDiff !== 0) return capDiff;
+      return (
+        getRouteRestrictionTierWithPair(a.currentRoute, ctx.routes) -
+        getRouteRestrictionTierWithPair(b.currentRoute, ctx.routes)
+      );
+    });
+
+  for (const { occupant, currentRoute } of occupiedEntries) {
+    for (const freeEmp of freeEmployees) {
+      if (freeEmp.id.toString() === occupant.id.toString()) continue;
+
+      const backup = {
+        workingSchedules: ctx.workingSchedules.map((s) => ({ ...s })),
+        assignments: ctx.assignments.map((a) => ({ ...a })),
+        labelAssignments: ctx.labelAssignments.map((l) => ({ ...l })),
+      };
+
+      removeRouteSlot(date, currentRoute.id, ctx);
+
+      const okDemanding = assignRouteToEmployee(occupant, route, date, ctx);
+      const okFree = okDemanding && assignRouteToEmployee(freeEmp, currentRoute, date, ctx);
+
+      if (okDemanding && okFree) {
+        return true;
+      }
+
+      ctx.workingSchedules = backup.workingSchedules;
+      ctx.assignments = backup.assignments;
+      ctx.labelAssignments = backup.labelAssignments;
+    }
+  }
+
+  return false;
+};
+
 const fillRemainingMandatorySlots = (ctx) => {
   for (const date of listMonthDates(ctx.month, ctx.year)) {
     const mandatoryRoutes = ctx.routes
       .filter((r) => routeRequiresStaffing(r) && isRouteOperatingOnDate(r, date))
-      .sort((a, b) => getRouteBlockHours(b, ctx.routes) - getRouteBlockHours(a, ctx.routes));
+      .sort(
+        (a, b) =>
+          getRouteRestrictionTierWithPair(b, ctx.routes) -
+            getRouteRestrictionTierWithPair(a, ctx.routes) ||
+          getRouteBlockHours(b, ctx.routes) - getRouteBlockHours(a, ctx.routes)
+      );
 
     for (const route of mandatoryRoutes) {
       if (findRouteAssignment(date, route.id, ctx.workingSchedules)) continue;
@@ -482,9 +556,17 @@ const fillRemainingMandatorySlots = (ctx) => {
         return gapB - gapA;
       });
 
+      let filled = false;
       for (const emp of ordered) {
         if (!isEmployeeDayFreeForRoute(emp.id, date, ctx)) continue;
-        if (assignRouteToEmployee(emp, route, date, ctx)) break;
+        if (assignRouteToEmployee(emp, route, date, ctx)) {
+          filled = true;
+          break;
+        }
+      }
+
+      if (!filled) {
+        tryCapabilitySwapForRoute(route, date, ctx);
       }
     }
   }
