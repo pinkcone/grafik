@@ -664,7 +664,8 @@ const handleExportXLSX = () => {
   const handleAutoFillRoutes = async () => {
     const ok = window.confirm(
       'Uzupełnić puste sloty tras w tym miesiącu?\n\n' +
-      'Najpierw przypisane zostaną trasy wymagające kat. C i specjalnych uprawnień.\n' +
+      'Najpierw każdy kierowca dostaje po jednej trasie dziennie, dopiero potem uzupełniane są resztki.\n' +
+      'Ręcznie wpisane trasy nie są zmieniane ani usuwane.\n' +
       'Ten sam kierowca dostaje trasę na cały tydzień (z zastępstwem przy urlopach).\n' +
       'Po pracy w sobotę dodawana jest etykieta DW5 (pn lub pt nast. tygodnia),\n' +
       'ale tylko gdy w tym dniu wszystkie trasy mają już kierowcę.\n' +

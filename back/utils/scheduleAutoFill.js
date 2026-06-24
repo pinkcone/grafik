@@ -74,6 +74,29 @@ const isEmployeeBusyOnDay = (employeeId, date, schedules, routes, routeIdForPair
   });
 };
 
+/** Liczba „zajęć” kierowcy w danym dniu (para tras = 1 zajęcie) */
+const getEmployeeAssignmentCountOnDay = (employeeId, date, schedules, routes) => {
+  const routeIds = schedules
+    .filter(
+      (s) =>
+        s.date === date &&
+        s.employee_id?.toString() === employeeId.toString() &&
+        s.route_id
+    )
+    .map((s) => s.route_id.toString());
+
+  const seenPairs = new Set();
+  let count = 0;
+  for (const rid of routeIds) {
+    const pairKey = getPairRouteIdsIncludingSelf(rid, routes).sort().join('-');
+    if (!seenPairs.has(pairKey)) {
+      seenPairs.add(pairKey);
+      count += 1;
+    }
+  }
+  return count;
+};
+
 const countEmployeeRouteDays = (employeeId, routeId, schedules, routes) => {
   const pairIds = new Set(getPairRouteIdsIncludingSelf(routeId, routes).map(String));
   return schedules.filter(
@@ -134,6 +157,16 @@ const pushAssignment = (assignments, workingSchedules, { date, route_id, employe
   });
 };
 
+const buildLockedRouteSlots = (schedules) =>
+  new Set(
+    schedules
+      .filter((s) => s.route_id)
+      .map((s) => `${s.date}|${s.route_id}`)
+  );
+
+const isRouteSlotLocked = (date, routeId, lockedRouteSlots) =>
+  lockedRouteSlots.has(`${date}|${routeId}`);
+
 const getWeekDriverFromExisting = (routeId, dates, schedules) => {
   const counts = {};
   for (const date of dates) {
@@ -149,63 +182,46 @@ const getWeekDriverFromExisting = (routeId, dates, schedules) => {
   return entries[0][0];
 };
 
-const pickWeekDriver = ({
-  route,
-  routes,
-  employees,
-  operatingDates,
-  workingSchedules,
-}) => {
-  const emptyDates = operatingDates.filter(
-    (date) => !findRouteAssignment(date, route.id, workingSchedules)
-  );
-  if (!emptyDates.length) return null;
-
-  const referenceDate = emptyDates[0];
-  const referenceDay = parseInt(referenceDate.split('-')[2], 10);
-
-  const candidates = employees.filter((emp) =>
-    emptyDates.some((date) =>
-      canEmployeeTakeRouteOnDay(emp, route, routes, date, workingSchedules)
-    )
-  );
-
-  if (!candidates.length) return null;
-
-  candidates.sort((a, b) =>
-    compareEmployeesForAutoFill(a, b, route, routes, {
-      schedules: workingSchedules,
-      date: referenceDate,
-      day: referenceDay,
-    })
-  );
-
-  return candidates[0];
-};
-
-const pickSubstituteForDay = ({
+const pickBestEmployeeForRoute = ({
   route,
   routes,
   employees,
   date,
   day,
   workingSchedules,
-  excludeEmployeeId = null,
+  requireNoRouteOnDay,
+  preferEmployeeId = null,
 }) => {
-  const candidates = employees.filter((emp) => {
-    if (excludeEmployeeId && emp.id.toString() === excludeEmployeeId.toString()) return false;
-    return canEmployeeTakeRouteOnDay(emp, route, routes, date, workingSchedules);
+  let candidates = employees.filter((emp) => {
+    if (!canEmployeeTakeRouteOnDay(emp, route, routes, date, workingSchedules)) return false;
+    if (
+      requireNoRouteOnDay &&
+      getEmployeeAssignmentCountOnDay(emp.id, date, workingSchedules, routes) > 0
+    ) {
+      return false;
+    }
+    return true;
   });
 
   if (!candidates.length) return null;
 
-  candidates.sort((a, b) =>
-    compareEmployeesForAutoFill(a, b, route, routes, {
+  candidates.sort((a, b) => {
+    if (preferEmployeeId) {
+      const aPref = a.id.toString() === preferEmployeeId.toString() ? 0 : 1;
+      const bPref = b.id.toString() === preferEmployeeId.toString() ? 0 : 1;
+      if (aPref !== bPref) return aPref - bPref;
+    }
+
+    const dayCountA = getEmployeeAssignmentCountOnDay(a.id, date, workingSchedules, routes);
+    const dayCountB = getEmployeeAssignmentCountOnDay(b.id, date, workingSchedules, routes);
+    if (dayCountA !== dayCountB) return dayCountA - dayCountB;
+
+    return compareEmployeesForAutoFill(a, b, route, routes, {
       schedules: workingSchedules,
       date,
       day,
-    })
-  );
+    });
+  });
 
   return candidates[0];
 };
@@ -270,107 +286,119 @@ const assignDriverToRouteOnDay = ({
 };
 
 /**
- * Wypełnia trasę w danym tygodniu jednym kierowcą na wszystkie dni kursowania,
- * o ile to możliwe. Dni z „wolnym” lub konfliktem dostają zastępcę tylko na ten dzień.
+ * Dzień po dniu, dwie fazy:
+ * 1) każdy kierowca max 1 trasa — najpierw rozdajemy po jednej,
+ * 2) zostają puste sloty — dopiero wtedy dokładamy drugie trasy.
+ * Zablokowane (ręczne) sloty tras nie są ruszane.
  */
-const fillRouteForWeek = ({
-  route,
-  pairRoute,
-  dates,
+const fillDay = ({
+  date,
   employees,
   routes,
   workingSchedules,
   assignments,
   user_id,
+  weekDriverByRoute,
+  lockedRouteSlots,
 }) => {
-  const operatingDates = dates.filter((date) => isRouteOperatingOnDate(route, date));
-  if (!operatingDates.length) return;
+  const day = parseInt(date.split('-')[2], 10);
+  const sortedRoutes = sortRoutesByAssignmentPriority(routes).filter((route) =>
+    isRouteOperatingOnDate(route, date)
+  );
 
-  const existingWeekDriverId = getWeekDriverFromExisting(route.id, operatingDates, workingSchedules);
-  let weekDriver = existingWeekDriverId
-    ? employees.find((e) => e.id.toString() === existingWeekDriverId.toString())
-    : null;
+  const tryFillRoutes = (requireNoRouteOnDay) => {
+    for (const route of sortedRoutes) {
+      if (findRouteAssignment(date, route.id, workingSchedules)) continue;
+      if (isRouteSlotLocked(date, route.id, lockedRouteSlots)) continue;
 
-  if (!weekDriver) {
-    weekDriver = pickWeekDriver({
-      route,
-      routes,
-      employees,
-      operatingDates,
-      workingSchedules,
-    });
-  }
+      const pairRoute = findPairRoute(route, routes);
+      if (pairRoute && findRouteAssignment(date, pairRoute.id, workingSchedules)) {
+        const existingPair = findRouteAssignment(date, pairRoute.id, workingSchedules);
+        const pairedEmployee = employees.find(
+          (e) => e.id.toString() === existingPair.employee_id.toString()
+        );
+        if (pairedEmployee && !isRouteSlotLocked(date, route.id, lockedRouteSlots)) {
+          assignDriverToRouteOnDay({
+            route,
+            pairRoute,
+            date,
+            employee: pairedEmployee,
+            employees,
+            routes,
+            workingSchedules,
+            assignments,
+            user_id,
+          });
+        }
+        continue;
+      }
 
-  for (const date of operatingDates) {
-    if (findRouteAssignment(date, route.id, workingSchedules)) continue;
-
-    const day = parseInt(date.split('-')[2], 10);
-    let assigned = false;
-
-    if (weekDriver) {
-      assigned = assignDriverToRouteOnDay({
-        route,
-        pairRoute,
-        date,
-        employee: weekDriver,
-        employees,
-        routes,
-        workingSchedules,
-        assignments,
-        user_id,
-      });
-    }
-
-    if (!assigned) {
-      const substitute = pickSubstituteForDay({
+      const preferEmployeeId = weekDriverByRoute.get(route.id.toString()) || null;
+      const employee = pickBestEmployeeForRoute({
         route,
         routes,
         employees,
         date,
         day,
         workingSchedules,
-        excludeEmployeeId: weekDriver?.id,
+        requireNoRouteOnDay,
+        preferEmployeeId,
       });
 
-      if (substitute) {
+      if (
+        employee &&
         assignDriverToRouteOnDay({
           route,
           pairRoute,
           date,
-          employee: substitute,
+          employee,
           employees,
           routes,
           workingSchedules,
           assignments,
           user_id,
-        });
+        }) &&
+        !weekDriverByRoute.has(route.id.toString())
+      ) {
+        weekDriverByRoute.set(route.id.toString(), employee.id.toString());
       }
     }
-  }
+  };
+
+  tryFillRoutes(true);
+  tryFillRoutes(false);
 };
 
 /**
  * Proponuje przypisania tras na puste sloty.
- * Tydzień po tygodniu — ten sam kierowca na tej samej trasie przez cały tydzień,
- * z zastępstwem w dniach wolnych lub niedostępnych.
+ * Szanuje ręczne wpisy — nie nadpisuje i nie usuwa istniejących przypisań.
  */
 function generateAutoFillAssignments({ employees, routes, schedules, month, year, user_id }) {
   const assignments = [];
   const workingSchedules = schedules.map((s) => ({ ...s }));
-  const sortedRoutes = sortRoutesByAssignmentPriority(routes);
+  const lockedRouteSlots = buildLockedRouteSlots(schedules);
   const weeks = getWeeksInMonth(month, year);
 
   for (const { dates } of weeks) {
-    for (const route of sortedRoutes) {
-      fillRouteForWeek({
-        route,
-        pairRoute: findPairRoute(route, routes),
-        dates,
+    const weekDriverByRoute = new Map();
+
+    for (const route of routes) {
+      const existingDriver = getWeekDriverFromExisting(route.id, dates, workingSchedules);
+      if (existingDriver) {
+        weekDriverByRoute.set(route.id.toString(), existingDriver);
+      }
+    }
+
+    for (const date of dates) {
+      fillDay({
+        date,
         employees,
         routes,
         workingSchedules,
         assignments,
         user_id,
+        weekDriverByRoute,
+        lockedRouteSlots,
       });
     }
   }
@@ -384,7 +412,8 @@ module.exports = {
   generateAutoFillAssignments,
   countEmployeeRouteDays,
   compareEmployeesForAutoFill,
+  getEmployeeAssignmentCountOnDay,
   getWeeksInMonth,
-  fillRouteForWeek,
-  pickWeekDriver,
+  fillDay,
+  buildLockedRouteSlots,
 };
