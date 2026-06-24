@@ -48,6 +48,46 @@ const isEmployeeBusyOnDay = (employeeId, date, schedules, routes, routeIdForPair
   });
 };
 
+const countEmployeeRouteDays = (employeeId, routeId, schedules, routes) => {
+  const pairIds = new Set(getPairRouteIdsIncludingSelf(routeId, routes).map(String));
+  return schedules.filter(
+    (s) =>
+      s.employee_id?.toString() === employeeId.toString() &&
+      s.route_id &&
+      pairIds.has(s.route_id.toString())
+  ).length;
+};
+
+const droveRouteYesterday = (employeeId, routeId, date, schedules, routes) => {
+  const [y, m, d] = date.split('-').map(Number);
+  const prev = new Date(y, m - 1, d - 1);
+  const prevDate = buildDate(prev.getFullYear(), prev.getMonth() + 1, prev.getDate());
+  const pairIds = new Set(getPairRouteIdsIncludingSelf(routeId, routes).map(String));
+
+  return schedules.some(
+    (s) =>
+      s.date === prevDate &&
+      s.employee_id?.toString() === employeeId.toString() &&
+      s.route_id &&
+      pairIds.has(s.route_id.toString())
+  );
+};
+
+const compareEmployeesForAutoFill = (employeeA, employeeB, route, routes, { schedules, date, day }) => {
+  const countA = countEmployeeRouteDays(employeeA.id, route.id, schedules, routes);
+  const countB = countEmployeeRouteDays(employeeB.id, route.id, schedules, routes);
+  if (countA !== countB) return countA - countB;
+
+  const streakA = droveRouteYesterday(employeeA.id, route.id, date, schedules, routes) ? 1 : 0;
+  const streakB = droveRouteYesterday(employeeB.id, route.id, date, schedules, routes) ? 1 : 0;
+  if (streakA !== streakB) return streakA - streakB;
+
+  const scarcity = compareEmployeesForRoute(employeeA, employeeB, route, routes);
+  if (scarcity !== 0) return scarcity;
+
+  return (employeeA.id + day) % 97 - (employeeB.id + day) % 97;
+};
+
 const pushAssignment = (assignments, workingSchedules, { date, route_id, employee_id, user_id }) => {
   assignments.push({ date, route_id, employee_id });
   workingSchedules.push({
@@ -60,10 +100,81 @@ const pushAssignment = (assignments, workingSchedules, { date, route_id, employe
   });
 };
 
+const fillRouteOnDay = ({
+  route,
+  pairRoute,
+  date,
+  day,
+  employees,
+  routes,
+  workingSchedules,
+  assignments,
+  user_id,
+}) => {
+  if (findRouteAssignment(date, route.id, workingSchedules)) return;
+
+  const existingPairAssignment = pairRoute
+    ? findRouteAssignment(date, pairRoute.id, workingSchedules)
+    : null;
+
+  if (existingPairAssignment) {
+    const pairedEmployee = employees.find(
+      (e) => e.id.toString() === existingPairAssignment.employee_id.toString()
+    );
+    if (
+      pairedEmployee &&
+      canAssignEmployeeToRouteWithPair(pairedEmployee, route, routes) &&
+      !hasLabelOnDay(pairedEmployee.id, date, workingSchedules)
+    ) {
+      pushAssignment(assignments, workingSchedules, {
+        date,
+        route_id: route.id,
+        employee_id: pairedEmployee.id,
+        user_id,
+      });
+    }
+    return;
+  }
+
+  const candidates = employees.filter((emp) => {
+    if (!canAssignEmployeeToRouteWithPair(emp, route, routes)) return false;
+    if (hasLabelOnDay(emp.id, date, workingSchedules)) return false;
+    if (isEmployeeBusyOnDay(emp.id, date, workingSchedules, routes, route.id)) return false;
+    return true;
+  });
+
+  if (candidates.length === 0) return;
+
+  candidates.sort((a, b) =>
+    compareEmployeesForAutoFill(a, b, route, routes, {
+      schedules: workingSchedules,
+      date,
+      day,
+    })
+  );
+
+  const picked = candidates[0];
+
+  pushAssignment(assignments, workingSchedules, {
+    date,
+    route_id: route.id,
+    employee_id: picked.id,
+    user_id,
+  });
+
+  if (pairRoute && !findRouteAssignment(date, pairRoute.id, workingSchedules)) {
+    pushAssignment(assignments, workingSchedules, {
+      date,
+      route_id: pairRoute.id,
+      employee_id: picked.id,
+      user_id,
+    });
+  }
+};
+
 /**
  * Proponuje przypisania tras na puste sloty.
- * Kolejność tras: najpierw C+SP, potem C, potem SP, na końcu zwykłe B.
- * Na trasach wymagających — „rzadcy” kierowcy; na B — oszczędzamy C/SP.
+ * Dzień po dniu, w każdym dniu najpierw trasy C/SP, z rotacją kierowców.
  */
 function generateAutoFillAssignments({ employees, routes, schedules, month, year, user_id }) {
   const assignments = [];
@@ -71,64 +182,21 @@ function generateAutoFillAssignments({ employees, routes, schedules, month, year
   const sortedRoutes = sortRoutesByAssignmentPriority(routes);
   const dim = daysInMonth(month, year);
 
-  for (const route of sortedRoutes) {
-    const pairRoute = findPairRoute(route, routes);
+  for (let day = 1; day <= dim; day++) {
+    const date = buildDate(year, month, day);
 
-    for (let day = 1; day <= dim; day++) {
-      const date = buildDate(year, month, day);
-
-      if (findRouteAssignment(date, route.id, workingSchedules)) continue;
-
-      const existingPairAssignment = pairRoute
-        ? findRouteAssignment(date, pairRoute.id, workingSchedules)
-        : null;
-
-      if (existingPairAssignment) {
-        const pairedEmployee = employees.find(
-          (e) => e.id.toString() === existingPairAssignment.employee_id.toString()
-        );
-        if (
-          pairedEmployee &&
-          canAssignEmployeeToRouteWithPair(pairedEmployee, route, routes) &&
-          !hasLabelOnDay(pairedEmployee.id, date, workingSchedules)
-        ) {
-          pushAssignment(assignments, workingSchedules, {
-            date,
-            route_id: route.id,
-            employee_id: pairedEmployee.id,
-            user_id,
-          });
-        }
-        continue;
-      }
-
-      const candidates = employees.filter((emp) => {
-        if (!canAssignEmployeeToRouteWithPair(emp, route, routes)) return false;
-        if (hasLabelOnDay(emp.id, date, workingSchedules)) return false;
-        if (isEmployeeBusyOnDay(emp.id, date, workingSchedules, routes, route.id)) return false;
-        return true;
-      });
-
-      candidates.sort((a, b) => compareEmployeesForRoute(a, b, route, routes));
-
-      const picked = candidates[0];
-      if (!picked) continue;
-
-      pushAssignment(assignments, workingSchedules, {
+    for (const route of sortedRoutes) {
+      fillRouteOnDay({
+        route,
+        pairRoute: findPairRoute(route, routes),
         date,
-        route_id: route.id,
-        employee_id: picked.id,
+        day,
+        employees,
+        routes,
+        workingSchedules,
+        assignments,
         user_id,
       });
-
-      if (pairRoute && !findRouteAssignment(date, pairRoute.id, workingSchedules)) {
-        pushAssignment(assignments, workingSchedules, {
-          date,
-          route_id: pairRoute.id,
-          employee_id: picked.id,
-          user_id,
-        });
-      }
     }
   }
 
@@ -137,4 +205,6 @@ function generateAutoFillAssignments({ employees, routes, schedules, month, year
 
 module.exports = {
   generateAutoFillAssignments,
+  countEmployeeRouteDays,
+  compareEmployeesForAutoFill,
 };

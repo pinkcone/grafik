@@ -621,6 +621,39 @@ const handleExportXLSX = () => {
   saveAs(new Blob([wbout]), "grafik.xlsx");
 };
 
+  const handleClearMonth = async () => {
+    const prefix = `${year}-${String(month).padStart(2, '0')}`;
+    const count = schedules.filter((s) => s.date.startsWith(prefix)).length;
+
+    const ok = window.confirm(
+      `Wyczyścić cały grafik za ${month}.${year}?\n` +
+      (count > 0
+        ? `Usunie ${count} wpis(ów) (trasy i etykiety) dla pracowników tego miasta.`
+        : 'Brak wpisów w tym miesiącu.')
+    );
+    if (!ok) return;
+
+    try {
+      const res = await fetch(
+        `/api/schedule/city/${cityId}/month?month=${month}&year=${year}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || `HTTP ${res.status}`);
+      }
+      alert(data.message || 'Miesiąc wyczyszczony.');
+      await fetchSchedule();
+      await fetchQuarterSchedules();
+    } catch (error) {
+      alert(`Nie udało się wyczyścić miesiąca: ${error.message}`);
+    }
+  };
+
   const handleAutoFillRoutes = async () => {
     const ok = window.confirm(
       'Uzupełnić puste sloty tras w tym miesiącu?\n\n' +
@@ -882,6 +915,9 @@ const prepareRoutesSheet = () => {
         <button type="button" onClick={handleExportXLSX}>Eksport do XLSX</button>
         <button type="button" className="btn-primary" onClick={handleAutoFillRoutes}>
           Uzupełnij trasy
+        </button>
+        <button type="button" className="btn-danger" onClick={handleClearMonth}>
+          Wyczyść miesiąc
         </button>
       </div>
 

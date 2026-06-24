@@ -217,3 +217,53 @@ exports.autoFillRoutes = async (req, res) => {
     });
   }
 };
+
+/**
+ * DELETE /api/schedule/city/:cityId/month?month=MM&year=YYYY
+ * Usuwa wszystkie wpisy grafiku pracowników danego miasta w wybranym miesiącu.
+ */
+exports.clearMonth = async (req, res) => {
+  const { cityId } = req.params;
+  const { month, year } = req.query;
+  const user_id = req.user.id;
+
+  try {
+    const monthNum = parseInt(month, 10);
+    const yearNum = parseInt(year, 10);
+    if (!monthNum || !yearNum) {
+      return res.status(400).json({ message: 'Podaj month i year w query.' });
+    }
+
+    const lastDay = new Date(yearNum, monthNum, 0).getDate();
+    const startDate = `${yearNum}-${String(monthNum).padStart(2, '0')}-01`;
+    const endDate = `${yearNum}-${String(monthNum).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    const employees = await Employee.findAll({ where: { city_id: cityId, user_id } });
+    const employeeIds = employees.map((e) => e.id);
+
+    if (employeeIds.length === 0) {
+      return res.json({ message: 'Brak pracowników w tym mieście.', deleted: 0 });
+    }
+
+    const deleted = await Schedule.destroy({
+      where: {
+        user_id,
+        employee_id: { [Op.in]: employeeIds },
+        date: { [Op.between]: [startDate, endDate] },
+      },
+    });
+
+    return res.json({
+      message: deleted > 0
+        ? `Usunięto ${deleted} wpis(ów) z grafiku za ${monthNum}.${yearNum}.`
+        : `Brak wpisów do usunięcia za ${monthNum}.${yearNum}.`,
+      deleted,
+    });
+  } catch (error) {
+    console.error('Błąd w clearMonth:', error);
+    return res.status(500).json({
+      message: 'Błąd czyszczenia grafiku miesiąca',
+      error: error.message,
+    });
+  }
+};
