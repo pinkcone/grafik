@@ -15,11 +15,40 @@ const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
 const quaters = [[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]];
 const getQuarterMonths = (m) => quaters.find(q => q.includes(m)) || [];
 
+const MONTH_NAMES = [
+  'Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec',
+  'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień',
+];
+
 function ScheduleView({ cityId }) {
   const token = localStorage.getItem('token');
 
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
+
+  const goToPrevMonth = () => {
+    if (month === 1) {
+      setMonth(12);
+      setYear((y) => y - 1);
+    } else {
+      setMonth((m) => m - 1);
+    }
+  };
+
+  const goToNextMonth = () => {
+    if (month === 12) {
+      setMonth(1);
+      setYear((y) => y + 1);
+    } else {
+      setMonth((m) => m + 1);
+    }
+  };
+
+  const goToToday = () => {
+    const now = new Date();
+    setMonth(now.getMonth() + 1);
+    setYear(now.getFullYear());
+  };
 
   const [viewType, setViewType] = useState('employees');
 
@@ -976,6 +1005,39 @@ const prepareRoutesSheet = () => {
     <div>
       <h2>Ułóż grafik – Widok: {viewType === 'employees' ? "wg Pracowników" : "wg Tras"}</h2>
 
+      <nav className="schedule-month-nav" aria-label="Wybór miesiąca">
+        <button
+          type="button"
+          className="schedule-month-nav__arrow"
+          onClick={goToPrevMonth}
+          aria-label="Poprzedni miesiąc"
+          title="Poprzedni miesiąc"
+        >
+          ‹
+        </button>
+        <div className="schedule-month-nav__label">
+          <span className="schedule-month-nav__month">{MONTH_NAMES[month - 1]}</span>
+          <span className="schedule-month-nav__year">{year}</span>
+        </div>
+        <button
+          type="button"
+          className="schedule-month-nav__arrow"
+          onClick={goToNextMonth}
+          aria-label="Następny miesiąc"
+          title="Następny miesiąc"
+        >
+          ›
+        </button>
+        <button
+          type="button"
+          className="schedule-month-nav__today"
+          onClick={goToToday}
+          title="Przejdź do bieżącego miesiąca"
+        >
+          Dziś
+        </button>
+      </nav>
+
       <div className="schedule-toolbar">
         <button type="button" onClick={handleExportXLSX}>Eksport do XLSX</button>
         <button type="button" className="btn-primary" onClick={handleAutoFillRoutes}>
@@ -1033,22 +1095,6 @@ const prepareRoutesSheet = () => {
           </button>
         </form>
       </Popup>
-
-      <div style={{ marginBottom: '10px' }}>
-        <label>Miesiąc: </label>
-        <select value={month} onChange={(e) => setMonth(parseInt(e.target.value, 10))}>
-          {[...Array(12).keys()].map(i => (
-            <option key={i + 1} value={i + 1}>{i + 1}</option>
-          ))}
-        </select>
-        <label> Rok: </label>
-        <input
-          type="number"
-          value={year}
-          onChange={(e) => setYear(parseInt(e.target.value, 10))}
-          style={{ width: '80px' }}
-        />
-      </div>
 
       <div className="btn-tabs schedule-toolbar">
         <button

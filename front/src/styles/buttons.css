@@ -13,7 +13,7 @@
 }
 
 /* Bazowy przycisk (wszędzie poza nagłówkiem) */
-button:not(.app-header__brand):not(.app-header__logout):not(.schedule-day-menu__trigger):not(.schedule-day-menu__item) {
+button:not(.app-header__brand):not(.app-header__logout):not(.schedule-day-menu__trigger):not(.schedule-day-menu__item):not(.schedule-month-nav__arrow):not(.schedule-month-nav__today) {
   font-family: var(--btn-font);
   font-size: 0.9rem;
   font-weight: 600;
@@ -29,16 +29,16 @@ button:not(.app-header__brand):not(.app-header__logout):not(.schedule-day-menu__
   box-shadow: 0 2px 8px rgba(26, 46, 48, 0.12);
 }
 
-button:not(.app-header__brand):not(.app-header__logout):not(.schedule-day-menu__trigger):not(.schedule-day-menu__item):hover {
+button:not(.app-header__brand):not(.app-header__logout):not(.schedule-day-menu__trigger):not(.schedule-day-menu__item):not(.schedule-month-nav__arrow):not(.schedule-month-nav__today):hover {
   background: linear-gradient(135deg, var(--btn-accent-hover) 0%, #4a6366 100%);
   box-shadow: 0 4px 12px rgba(26, 46, 48, 0.18);
 }
 
-button:not(.app-header__brand):not(.app-header__logout):not(.schedule-day-menu__trigger):not(.schedule-day-menu__item):active {
+button:not(.app-header__brand):not(.app-header__logout):not(.schedule-day-menu__trigger):not(.schedule-day-menu__item):not(.schedule-month-nav__arrow):not(.schedule-month-nav__today):active {
   transform: scale(0.97);
 }
 
-button:not(.app-header__brand):not(.app-header__logout):not(.schedule-day-menu__trigger):not(.schedule-day-menu__item):disabled {
+button:not(.app-header__brand):not(.app-header__logout):not(.schedule-day-menu__trigger):not(.schedule-day-menu__item):not(.schedule-month-nav__arrow):not(.schedule-month-nav__today):disabled {
   opacity: 0.55;
   cursor: not-allowed;
   transform: none;

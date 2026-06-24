@@ -89,3 +89,90 @@
   overflow-x: auto;
   overflow-y: hidden;
 }
+
+/* Nawigacja miesiąca */
+.schedule-month-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 6px 10px 6px 6px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(118, 145, 148, 0.35);
+  border-radius: 14px;
+  box-shadow: 0 2px 10px rgba(26, 46, 48, 0.08);
+}
+
+.schedule-month-nav__arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  font-size: 1.75rem;
+  font-weight: 400;
+  line-height: 1;
+  color: #1a2e30;
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.schedule-month-nav__arrow:hover {
+  background: #e0f0f0;
+  border-color: rgba(118, 145, 148, 0.45);
+  color: #1a2e30;
+}
+
+.schedule-month-nav__arrow:active {
+  background: #d0e4e4;
+  transform: scale(0.96);
+}
+
+.schedule-month-nav__label {
+  min-width: 148px;
+  padding: 2px 10px;
+  text-align: center;
+  user-select: none;
+}
+
+.schedule-month-nav__month {
+  display: block;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a2e30;
+  letter-spacing: 0.02em;
+}
+
+.schedule-month-nav__year {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #5a7376;
+}
+
+.schedule-month-nav__today {
+  margin-left: 4px;
+  padding: 9px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1a2e30;
+  background: #e0f0f0;
+  border: 1px solid rgba(118, 145, 148, 0.4);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.schedule-month-nav__today:hover {
+  background: #d4e8e8;
+  border-color: #769194;
+}
+
+.schedule-month-nav__today:active {
+  transform: scale(0.97);
+}
