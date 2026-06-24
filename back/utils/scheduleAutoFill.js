@@ -5,6 +5,7 @@ const {
   getAssignmentBlockReason,
   getEmployeeCapabilityTier,
   getRouteRestrictionTierWithPair,
+  hasSpecialPermissions,
 } = require('./routeAssignment');
 const { isRouteOperatingOnDate } = require('./routeOperatingDays');
 const { generateDw5Proposals, isSaturday, planSaturdayDw5Package } = require('./scheduleRules');
@@ -88,6 +89,25 @@ const getGapCloseThreshold = (employee, ctx) => {
   const target = getTargetMonthHours(employee, ctx.month, ctx.year);
   return Math.max(2, target * 0.04);
 };
+
+/**
+ * Kolejność układania: najpierw najmniej elastyczni.
+ * 0 = B bez SP, 1 = C bez SP, 2 = B + SP, 3 = C + SP (SP dzielą resztę na końcu).
+ */
+const getEmployeeFillOrderRank = (employee) => {
+  const hasSP = hasSpecialPermissions(employee?.special_permissions);
+  const isC = employee?.license_category === 'C';
+  if (!hasSP && !isC) return 0;
+  if (!hasSP && isC) return 1;
+  if (hasSP && !isC) return 2;
+  return 3;
+};
+
+const sortEmployeesForFillOrder = (employees) =>
+  [...employees].sort(
+    (a, b) =>
+      getEmployeeFillOrderRank(a) - getEmployeeFillOrderRank(b) || a.id - b.id
+  );
 
 const canEmployeeTakeRouteOnDay = (
   employee,
@@ -312,7 +332,15 @@ const findBestEmptySlot = (employee, ctx, { maxOvershoot = 1.1 } = {}) => {
       if (gap > 0 && after > target * maxOvershoot) continue;
 
       const mandatoryBonus = routeRequiresStaffing(route) ? -0.5 : 0;
-      const score = scoreForGap(gap, blockHours) + mandatoryBonus;
+      // Kara za marnowanie uprawnień: kierowca z wyższymi uprawnieniami niż
+      // wymaga trasa woli zostawić prostą trasę mniej wykwalifikowanym.
+      const wastePenalty =
+        Math.max(
+          0,
+          getEmployeeCapabilityTier(employee) -
+            getRouteRestrictionTierWithPair(route, ctx.routes)
+        ) * 0.35;
+      const score = scoreForGap(gap, blockHours) + mandatoryBonus + wastePenalty;
 
       if (!best || score < best.score) {
         best = { date, route, blockHours, score };
@@ -585,7 +613,7 @@ function generateAutoFillAssignments({ employees, routes, schedules, month, year
   const { initialEmployeeDays, initialRouteSlots } = buildInitialSnapshot(schedules);
 
   const ctx = {
-    employees: [...employees].sort((a, b) => a.id - b.id),
+    employees: sortEmployeesForFillOrder(employees),
     routes,
     workingSchedules,
     assignments: [],
