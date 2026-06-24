@@ -7,7 +7,7 @@ const {
   getRouteRestrictionTierWithPair,
   hasSpecialPermissions,
 } = require('./routeAssignment');
-const { isRouteOperatingOnDate } = require('./routeOperatingDays');
+const { isRouteOperatingOnDate, getIsoWeekday } = require('./routeOperatingDays');
 const { generateDw5Proposals, isSaturday, planSaturdayDw5Package } = require('./scheduleRules');
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 const {
@@ -296,55 +296,73 @@ const listMonthDates = (month, year) => {
   return dates;
 };
 
+const isWeekday = (date) => {
+  const wd = getIsoWeekday(date);
+  return wd >= 1 && wd <= 5;
+};
+
+const listWeekdaysInMonth = (month, year) =>
+  listMonthDates(month, year).filter(isWeekday);
+
 const scoreForGap = (gap, blockHours) => {
   const after = gap - blockHours;
   return Math.abs(after);
 };
 
-const findBestEmptySlot = (employee, ctx, { maxOvershoot = 1.1 } = {}) => {
+const scoreRouteForEmployeeHours = (employee, route, ctx) => {
   const gap = getHourGap(employee, ctx);
-  const target = getTargetMonthHours(employee, ctx.month, ctx.year);
-  const current = target - gap;
+  const blockHours = getRouteBlockHours(route, ctx.routes);
+  const mandatoryBonus = routeRequiresStaffing(route) ? -0.5 : 0;
+  const wastePenalty =
+    Math.max(
+      0,
+      getEmployeeCapabilityTier(employee) -
+        getRouteRestrictionTierWithPair(route, ctx.routes)
+    ) * 0.35;
+  return scoreForGap(gap, blockHours) + mandatoryBonus + wastePenalty;
+};
+
+/** Najlepsza pusta trasa na dany dzień — dopasowana do godzin (krótsza gdy nad etatem, dłuższa gdy brakuje). */
+const findBestRouteForEmployeeOnDay = (employee, date, ctx) => {
+  let best = null;
+
+  for (const route of ctx.routes) {
+    if (!isRouteOperatingOnDate(route, date)) continue;
+    if (findRouteAssignment(date, route.id, ctx.workingSchedules)) continue;
+    if (!canEmployeeTakeRouteOnDay(
+      employee,
+      route,
+      ctx.routes,
+      date,
+      ctx.workingSchedules,
+      ctx.month,
+      ctx.year,
+      routeCheckOptions(ctx)
+    )) {
+      continue;
+    }
+
+    const score = scoreRouteForEmployeeHours(employee, route, ctx);
+    if (!best || score < best.score) {
+      best = { route, score };
+    }
+  }
+
+  return best?.route || null;
+};
+
+const findBestEmptySlot = (employee, ctx) => {
   let best = null;
 
   for (const date of listMonthDates(ctx.month, ctx.year)) {
     if (!isEmployeeDayFreeForRoute(employee.id, date, ctx)) continue;
 
-    for (const route of ctx.routes) {
-      if (!isRouteOperatingOnDate(route, date)) continue;
-      if (findRouteAssignment(date, route.id, ctx.workingSchedules)) continue;
-      if (!canEmployeeTakeRouteOnDay(
-        employee,
-        route,
-        ctx.routes,
-        date,
-        ctx.workingSchedules,
-        ctx.month,
-        ctx.year,
-        routeCheckOptions(ctx)
-      )) {
-        continue;
-      }
+    const route = findBestRouteForEmployeeOnDay(employee, date, ctx);
+    if (!route) continue;
 
-      const blockHours = getRouteBlockHours(route, ctx.routes);
-      const after = current + blockHours;
-      if (gap <= 0 && after > target * maxOvershoot) continue;
-      if (gap > 0 && after > target * maxOvershoot) continue;
-
-      const mandatoryBonus = routeRequiresStaffing(route) ? -0.5 : 0;
-      // Kara za marnowanie uprawnień: kierowca z wyższymi uprawnieniami niż
-      // wymaga trasa woli zostawić prostą trasę mniej wykwalifikowanym.
-      const wastePenalty =
-        Math.max(
-          0,
-          getEmployeeCapabilityTier(employee) -
-            getRouteRestrictionTierWithPair(route, ctx.routes)
-        ) * 0.35;
-      const score = scoreForGap(gap, blockHours) + mandatoryBonus + wastePenalty;
-
-      if (!best || score < best.score) {
-        best = { date, route, blockHours, score };
-      }
+    const score = scoreRouteForEmployeeHours(employee, route, ctx);
+    if (!best || score < best.score) {
+      best = { date, route, score };
     }
   }
 
@@ -396,7 +414,7 @@ const findBestSwapForEmployee = (employee, ctx) => {
       assignRouteToEmployee(employee, route, date, ctx);
 
       let otherRecovery = null;
-      const refill = findBestEmptySlot(other, ctx, { maxOvershoot: 1.15 });
+      const refill = findBestEmptySlot(other, ctx);
       if (refill) {
         assignRouteToEmployee(other, refill.route, refill.date, ctx);
         otherRecovery = refill;
@@ -432,39 +450,21 @@ const findBestSwapForEmployee = (employee, ctx) => {
   return best;
 };
 
-const findRemovableAlgoAssignment = (employee, ctx) => {
-  const candidates = [];
-
-  for (const s of ctx.workingSchedules) {
-    if (s.employee_id?.toString() !== employee.id.toString() || !s.route_id) continue;
-    if (!isRouteSlotSwappable(s.date, s.route_id, ctx.initialRouteSlots)) continue;
-
-    const route = ctx.routes.find((r) => r.id.toString() === s.route_id.toString());
-    if (!route) continue;
-
-    candidates.push({
-      date: s.date,
-      route,
-      hours: getRouteBlockHours(route, ctx.routes),
-    });
+/** pn–pt: w każdym dniu rozdaj trasy po kolei (B → C → SP), dobór pod godziny. */
+const fillWeekdaysByDay = (ctx) => {
+  for (const date of listWeekdaysInMonth(ctx.month, ctx.year)) {
+    for (const emp of sortEmployeesForFillOrder(ctx.employees)) {
+      if (!isEmployeeDayFreeForRoute(emp.id, date, ctx)) continue;
+      const route = findBestRouteForEmployeeOnDay(emp, date, ctx);
+      if (route) assignRouteToEmployee(emp, route, date, ctx);
+    }
   }
-
-  if (candidates.length === 0) return null;
-
-  const gap = getHourGap(employee, ctx);
-  candidates.sort((a, b) => {
-    const scoreA = Math.abs(gap + a.hours);
-    const scoreB = Math.abs(gap + b.hours);
-    return scoreA - scoreB;
-  });
-
-  return candidates[0];
 };
 
 const balanceEmployeeMonth = (employee, ctx) => {
   const threshold = getGapCloseThreshold(employee, ctx);
 
-  for (let pass = 0; pass < 200; pass++) {
+  for (let pass = 0; pass < 100; pass++) {
     const gap = getHourGap(employee, ctx);
     if (Math.abs(gap) <= threshold) break;
 
@@ -488,12 +488,8 @@ const balanceEmployeeMonth = (employee, ctx) => {
       break;
     }
 
-    if (gap < -threshold) {
-      const removable = findRemovableAlgoAssignment(employee, ctx);
-      if (!removable) break;
-      removeRouteSlot(removable.date, removable.route.id, ctx);
-      continue;
-    }
+    // Nad etatem: nie usuwamy tras — krótsze trasy wybierane są przy kolejnych dniach / zamianach.
+    break;
   }
 };
 
@@ -564,6 +560,166 @@ const tryCapabilitySwapForRoute = (route, date, ctx) => {
   return false;
 };
 
+const countEmployeeRouteDaysInMonth = (employeeId, ctx) => {
+  const prefix = `${ctx.year}-${String(ctx.month).padStart(2, '0')}`;
+  const days = new Set();
+  for (const s of ctx.workingSchedules) {
+    if (
+      s.employee_id?.toString() === employeeId.toString() &&
+      s.route_id &&
+      s.date?.startsWith(prefix)
+    ) {
+      days.add(s.date);
+    }
+  }
+  return days.size;
+};
+
+const sortOpenRoutesForFill = (routes, date, ctx) =>
+  [...routes]
+    .filter((r) => isRouteOperatingOnDate(r, date))
+    .filter((r) => !findRouteAssignment(date, r.id, ctx.workingSchedules))
+    .sort((a, b) => {
+      const mandA = routeRequiresStaffing(a) ? 0 : 1;
+      const mandB = routeRequiresStaffing(b) ? 0 : 1;
+      if (mandA !== mandB) return mandA - mandB;
+      return (
+        getRouteRestrictionTierWithPair(b, ctx.routes) -
+          getRouteRestrictionTierWithPair(a, ctx.routes) ||
+        getRouteBlockHours(b, ctx.routes) - getRouteBlockHours(a, ctx.routes)
+      );
+    });
+
+const sortFreeEmployeesForCoverage = (employees, date, ctx) =>
+  sortEmployeesForFillOrder(employees.filter((e) => isEmployeeDayFreeForRoute(e.id, date, ctx)))
+    .sort(
+      (a, b) =>
+        countEmployeeRouteDaysInMonth(a.id, ctx) -
+          countEmployeeRouteDaysInMonth(b.id, ctx) ||
+        getHourGap(b, ctx) - getHourGap(a, ctx) ||
+        a.id - b.id
+    );
+
+/**
+ * Końcowy pass: pn–pt — wolni kierowcy + puste trasy, dobór tras pod godziny.
+ */
+const finalizeDriverRouteMatching = (ctx) => {
+  let changed = true;
+  let guard = 0;
+
+  while (changed && guard < 600) {
+    changed = false;
+    guard += 1;
+
+    for (const date of listWeekdaysInMonth(ctx.month, ctx.year)) {
+      const freeEmployees = sortFreeEmployeesForCoverage(ctx.employees, date, ctx);
+      if (freeEmployees.length === 0) continue;
+
+      for (const emp of freeEmployees) {
+        if (!isEmployeeDayFreeForRoute(emp.id, date, ctx)) continue;
+        const route = findBestRouteForEmployeeOnDay(emp, date, ctx);
+        if (route && assignRouteToEmployee(emp, route, date, ctx)) {
+          changed = true;
+        }
+      }
+
+      const openMandatory = sortOpenRoutesForFill(ctx.routes, date, ctx).filter((r) =>
+        routeRequiresStaffing(r)
+      );
+      for (const route of openMandatory) {
+        if (findRouteAssignment(date, route.id, ctx.workingSchedules)) continue;
+        if (tryCapabilitySwapForRoute(route, date, ctx)) {
+          changed = true;
+        }
+      }
+    }
+  }
+
+  for (const emp of sortEmployeesForFillOrder(ctx.employees)) {
+    for (const date of listWeekdaysInMonth(ctx.month, ctx.year)) {
+      if (!isEmployeeDayFreeForRoute(emp.id, date, ctx)) continue;
+      const route = findBestRouteForEmployeeOnDay(emp, date, ctx);
+      if (route) assignRouteToEmployee(emp, route, date, ctx);
+    }
+  }
+};
+
+const trySwapRoutesBetweenEmployees = (date, empA, empB, routeA, routeB, ctx) => {
+  if (!empA || !empB || !routeA || !routeB) return false;
+  if (empA.id.toString() === empB.id.toString()) return false;
+  if (routeA.id.toString() === routeB.id.toString()) return false;
+
+  if (!isRouteSlotSwappable(date, routeA.id, ctx.initialRouteSlots)) return false;
+  if (!isRouteSlotSwappable(date, routeB.id, ctx.initialRouteSlots)) return false;
+
+  const gapBefore = Math.abs(getHourGap(empA, ctx)) + Math.abs(getHourGap(empB, ctx));
+
+  const backup = {
+    workingSchedules: ctx.workingSchedules.map((s) => ({ ...s })),
+    assignments: ctx.assignments.map((a) => ({ ...a })),
+    labelAssignments: ctx.labelAssignments.map((l) => ({ ...l })),
+  };
+
+  removeRouteSlot(date, routeA.id, ctx);
+  removeRouteSlot(date, routeB.id, ctx);
+
+  const ok =
+    assignRouteToEmployee(empA, routeB, date, ctx) &&
+    assignRouteToEmployee(empB, routeA, date, ctx);
+
+  if (!ok) {
+    ctx.workingSchedules = backup.workingSchedules;
+    ctx.assignments = backup.assignments;
+    ctx.labelAssignments = backup.labelAssignments;
+    return false;
+  }
+
+  const gapAfter = Math.abs(getHourGap(empA, ctx)) + Math.abs(getHourGap(empB, ctx));
+  if (gapAfter >= gapBefore) {
+    ctx.workingSchedules = backup.workingSchedules;
+    ctx.assignments = backup.assignments;
+    ctx.labelAssignments = backup.labelAssignments;
+    return false;
+  }
+
+  return true;
+};
+
+/** Zamiany tras w obrębie dnia — wyrównanie godzin przy różnej długości tras. */
+const rebalanceHoursOnWeekdays = (ctx) => {
+  for (const date of listWeekdaysInMonth(ctx.month, ctx.year)) {
+  let improved = true;
+  let guard = 0;
+  while (improved && guard < 40) {
+    improved = false;
+    guard += 1;
+
+    const dayEntries = ctx.workingSchedules.filter((s) => s.date === date && s.route_id);
+    for (let i = 0; i < dayEntries.length; i++) {
+      for (let j = i + 1; j < dayEntries.length; j++) {
+        const entryA = dayEntries[i];
+        const entryB = dayEntries[j];
+        const empA = ctx.employees.find(
+          (e) => e.id.toString() === entryA.employee_id?.toString()
+        );
+        const empB = ctx.employees.find(
+          (e) => e.id.toString() === entryB.employee_id?.toString()
+        );
+        const routeA = ctx.routes.find(
+          (r) => r.id.toString() === entryA.route_id?.toString()
+        );
+        const routeB = ctx.routes.find(
+          (r) => r.id.toString() === entryB.route_id?.toString()
+        );
+        if (trySwapRoutesBetweenEmployees(date, empA, empB, routeA, routeB, ctx)) {
+          improved = true;
+        }
+      }
+    }
+  }
+  }
+};
+
 const fillRemainingMandatorySlots = (ctx) => {
   for (const date of listMonthDates(ctx.month, ctx.year)) {
     const mandatoryRoutes = ctx.routes
@@ -606,7 +762,8 @@ const fillRemainingMandatorySlots = (ctx) => {
  * 2. Kierowca po kierowcy — dopasowanie godzin na cały miesiąc
  * 3. Puste sloty → zamiany z innymi (tylko przypisania algorytmu)
  * 4. Na końcu — wypełnienie obowiązkowych tras
- * 5. DW5
+ * 5. Finalizacja — wolni kierowcy + puste trasy (każdy dostaje co może)
+ * 6. DW5
  */
 function generateAutoFillAssignments({ employees, routes, schedules, month, year, user_id }) {
   const workingSchedules = schedules.map((s) => ({ ...s }));
@@ -625,11 +782,15 @@ function generateAutoFillAssignments({ employees, routes, schedules, month, year
     user_id,
   };
 
+  fillWeekdaysByDay(ctx);
+
   for (const employee of ctx.employees) {
     balanceEmployeeMonth(employee, ctx);
   }
 
   fillRemainingMandatorySlots(ctx);
+  finalizeDriverRouteMatching(ctx);
+  rebalanceHoursOnWeekdays(ctx);
 
   const extraLabels = generateDw5Proposals(
     ctx.workingSchedules,

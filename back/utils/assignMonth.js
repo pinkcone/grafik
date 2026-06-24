@@ -7,7 +7,6 @@ const {
 } = require('./scheduleRules');
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 const { canEmployeeHaveAnotherRouteOnDay } = require('./scheduleConstraints');
-const { wouldExceedTargetHours } = require('./scheduleHours');
 const { canEmployeeTakeRouteOnDay, buildInitialSnapshot } = require('./scheduleAutoFill');
 
 const daysInMonth = (month, year) => new Date(year, month, 0).getDate();
@@ -100,8 +99,7 @@ function generateMonthRouteAssignments({
         canAssignEmployeeToRouteWithPair(employee, pairRoute, routes, date, workingSchedules) &&
         canEmployeeHaveAnotherRouteOnDay(employee.id, pairRoute.id, date, workingSchedules, routes, {
           allowPairLeg: true,
-        }) &&
-        !wouldExceedTargetHours(employee, pairRoute, workingSchedules, routes, month, year)
+        })
       ) {
         pushRouteAssignment(routeAssignments, workingSchedules, {
           date,
