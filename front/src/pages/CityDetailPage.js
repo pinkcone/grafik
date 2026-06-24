@@ -5,7 +5,10 @@ import Popup from '../components/Popup';
 import ScheduleView from './ScheduleView';
 import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
 import { formatYesNo } from '../utils/routeAssignment';
+import { formatOperatingDays, DEFAULT_OPERATING_DAYS, normalizeOperatingDays } from '../utils/routeOperatingDays';
 import { logEmployeeLicense, logRouteLicense, logLicenseReady } from '../utils/licenseLog';
+import RouteOperatingDaysPicker from '../components/RouteOperatingDaysPicker';
+import '../styles/RouteOperatingDaysPicker.css';
 
 
 function CityDetailPage() {
@@ -47,6 +50,7 @@ function CityDetailPage() {
   const [segmentEnd, setSegmentEnd] = useState('');
   const [routeLicenseCategory, setRouteLicenseCategory] = useState('B');
   const [routeRequiresSpecialPermissions, setRouteRequiresSpecialPermissions] = useState(false);
+  const [routeOperatingDays, setRouteOperatingDays] = useState([...DEFAULT_OPERATING_DAYS]);
 
   useEffect(() => {
     logLicenseReady({ cityId });
@@ -221,6 +225,7 @@ function CityDetailPage() {
     setRouteLinkedId('');
     setRouteLicenseCategory('B');
     setRouteRequiresSpecialPermissions(false);
+    setRouteOperatingDays([...DEFAULT_OPERATING_DAYS]);
     setIsRouteModalOpen(true);
   };
 
@@ -249,6 +254,7 @@ function CityDetailPage() {
     setRouteLinkedId(rt.linked_route_id || '');
     setRouteLicenseCategory(rt.required_license_category || 'B');
     setRouteRequiresSpecialPermissions(!!rt.requires_special_permissions);
+    setRouteOperatingDays(normalizeOperatingDays(rt.operating_days));
     setIsRouteModalOpen(true);
   };
 
@@ -282,6 +288,7 @@ function CityDetailPage() {
       linked_route_id: routeLinkedId || null,
       required_license_category: routeLicenseCategory || 'B',
       requires_special_permissions: routeRequiresSpecialPermissions,
+      operating_days: routeOperatingDays,
     };
     logRouteLicense('3. wysyłam do API', routeData);
     try {
@@ -424,6 +431,7 @@ function CityDetailPage() {
                 <th>ID</th>
                 <th>Nazwa</th>
                 <th>Wym. kat.</th>
+                <th>Dni</th>
                 <th>Spec. upr.</th>
                 <th>Godziny pracy</th>
                 <th>Trasa powiązana</th>
@@ -437,6 +445,7 @@ function CityDetailPage() {
                   <td>{rt.id}</td>
                   <td>{rt.name}</td>
                   <td>{rt.required_license_category || 'B'}</td>
+                  <td>{formatOperatingDays(rt)}</td>
                   <td>{formatYesNo(rt.requires_special_permissions)}</td>
                   <td>
                     {(() => {
@@ -586,6 +595,10 @@ function CityDetailPage() {
               {' '}Wymaga specjalnych uprawnień
             </label>
           </div>
+          <RouteOperatingDaysPicker
+            selectedDays={routeOperatingDays}
+            onChange={setRouteOperatingDays}
+          />
           <div>
             <label>Trasa powiązana:</label>
             <select value={routeLinkedId} onChange={(e) => setRouteLinkedId(e.target.value)}>

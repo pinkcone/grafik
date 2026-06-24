@@ -1,0 +1,41 @@
+.route-days-picker {
+  margin-bottom: 12px;
+}
+
+.route-days-picker__label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #1a2e30;
+  margin-bottom: 6px;
+}
+
+.route-days-picker__days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.route-days-picker__day {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #e0f0f0;
+  border: 1px solid rgba(118, 145, 148, 0.35);
+  font-size: 0.85rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.route-days-picker__day input {
+  margin: 0;
+  cursor: pointer;
+}
+
+.route-days-picker__hint {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  color: #5a7376;
+}

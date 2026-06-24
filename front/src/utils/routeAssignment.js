@@ -1,4 +1,5 @@
 import { canDriveWithCategory } from './licenseCategories';
+import { getOperatingDayBlockReason } from './routeOperatingDays';
 
 export const toBoolean = (value) => {
   if (value === true || value === 1 || value === '1' || value === 'true') return true;
@@ -22,10 +23,18 @@ export const findPairRoute = (route, allRoutes = []) => {
 };
 
 export const getAssignmentBlockReason = (employee, route, options = {}) => {
-  const { pairedRoute = null } = options;
+  const { pairedRoute = null, date = null } = options;
 
   if (!employee || !route) {
     return 'Brak danych pracownika lub trasy.';
+  }
+
+  const dayReason = getOperatingDayBlockReason(route, date);
+  if (dayReason) return dayReason;
+
+  if (pairedRoute) {
+    const pairDayReason = getOperatingDayBlockReason(pairedRoute, date, 'Trasa powiązana');
+    if (pairDayReason) return pairDayReason;
   }
 
   const requiredCategory = route.required_license_category || 'B';
@@ -43,7 +52,7 @@ export const getAssignmentBlockReason = (employee, route, options = {}) => {
   }
 
   if (pairedRoute) {
-    const pairReason = getAssignmentBlockReason(employee, pairedRoute);
+    const pairReason = getAssignmentBlockReason(employee, pairedRoute, { date });
     if (pairReason) {
       return `Trasa powiązana „${pairedRoute.name}”: ${pairReason}`;
     }
@@ -56,9 +65,9 @@ export const canAssignEmployeeToRoute = (employee, route, options = {}) => {
   return getAssignmentBlockReason(employee, route, options) === null;
 };
 
-export const canAssignEmployeeToRouteWithPair = (employee, route, allRoutes = []) => {
+export const canAssignEmployeeToRouteWithPair = (employee, route, allRoutes = [], date = null) => {
   const pairedRoute = findPairRoute(route, allRoutes);
-  return canAssignEmployeeToRoute(employee, route, { pairedRoute });
+  return canAssignEmployeeToRoute(employee, route, { pairedRoute, date });
 };
 
 export const getRouteRestrictionTier = (route) => {

@@ -2,6 +2,7 @@
 const { Schedule, Employee, Route } = require('../models');
 const { Op } = require('sequelize');
 const { canAssignEmployeeToRoute, getAssignmentBlockReason, findPairRoute } = require('../utils/routeAssignment');
+const { enrichRouteWithOperatingDays, attachOperatingDays } = require('../utils/routeDayHelpers');
 const { generateAutoFillAssignments } = require('../utils/scheduleAutoFill');
 
 const parseWorkingHours = (wh) => {
@@ -47,10 +48,11 @@ exports.updateScheduleCell = async (req, res) => {
       if (!route) {
         return res.status(400).json({ message: 'Trasa nie znaleziona.' });
       }
-      const userRoutes = await Route.findAll({ where: { user_id } });
-      const pairedRoute = findPairRoute(route, userRoutes);
-      if (!canAssignEmployeeToRoute(employee, route, { pairedRoute })) {
-        const reason = getAssignmentBlockReason(employee, route, { pairedRoute });
+      const routeWithDays = await enrichRouteWithOperatingDays(route);
+      const userRoutes = await attachOperatingDays(await Route.findAll({ where: { user_id } }));
+      const pairedRoute = findPairRoute(routeWithDays, userRoutes);
+      if (!canAssignEmployeeToRoute(employee, routeWithDays, { pairedRoute, date })) {
+        const reason = getAssignmentBlockReason(employee, routeWithDays, { pairedRoute, date });
         return res.status(400).json({
           message: reason || 'Pracownik nie spełnia wymagań trasy.',
         });
@@ -155,7 +157,7 @@ exports.autoFillRoutes = async (req, res) => {
     const startDate = `${yearNum}-${String(monthNum).padStart(2, '0')}-01`;
     const endDate = `${yearNum}-${String(monthNum).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-    const [employees, routes, schedules] = await Promise.all([
+    const [employees, routesRaw, schedules] = await Promise.all([
       Employee.findAll({ where: { city_id: cityId, user_id } }),
       Route.findAll({ where: { main_city_id: cityId, user_id } }),
       Schedule.findAll({
@@ -163,6 +165,7 @@ exports.autoFillRoutes = async (req, res) => {
       }),
     ]);
 
+    const routes = await attachOperatingDays(routesRaw);
     const activeRoutes = routes.filter(routeHasSegments);
     const cityEmployeeIds = new Set(employees.map((e) => e.id.toString()));
     const citySchedules = schedules.filter((s) =>

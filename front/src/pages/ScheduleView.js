@@ -163,11 +163,12 @@ function ScheduleView({ cityId }) {
   const days = [];
   for (let d = 1; d <= daysInMonth(month, year); d++) days.push(d);
 
-  const assertEmployeeCanTakeRoute = (employeeId, routeId) => {
+  const assertEmployeeCanTakeRoute = (employeeId, routeId, date) => {
     const employee = employees.find((e) => e.id.toString() === employeeId.toString());
     const route = routes.find((r) => r.id.toString() === routeId.toString());
     const reason = getAssignmentBlockReason(employee, route, {
       pairedRoute: findPairRoute(route, routes),
+      date,
     });
     if (reason) {
       throw new Error(reason);
@@ -187,7 +188,7 @@ function ScheduleView({ cityId }) {
 
     try {
       if (route_id) {
-        assertEmployeeCanTakeRoute(employeeId, route_id);
+        assertEmployeeCanTakeRoute(employeeId, route_id, date);
         // 1) najpierw wybrana trasa
         await putScheduleCell({ date, route_id: Number(route_id), employee_id: employeeId });
 
@@ -243,7 +244,7 @@ function ScheduleView({ cityId }) {
 
     try {
       if (route_id) {
-        assertEmployeeCanTakeRoute(entry.employee_id, route_id);
+        assertEmployeeCanTakeRoute(entry.employee_id, route_id, date);
         // 1) wybrana trasa
         await putScheduleCell({ date, route_id: Number(route_id), employee_id: entry.employee_id });
 
@@ -302,7 +303,7 @@ function ScheduleView({ cityId }) {
     const availableRoutes = sortRoutesByAssignmentPriority(
       routes.filter((r) => {
         if (assignedRouteIds.includes(r.id.toString())) return false;
-        return canAssignEmployeeToRouteWithPair(employee, r, routes);
+        return canAssignEmployeeToRouteWithPair(employee, r, routes, date);
       })
     );
 
@@ -468,7 +469,7 @@ function ScheduleView({ cityId }) {
 
       // Zwykłe przypisanie/odpięcie
       if (employeeId != null) {
-        assertEmployeeCanTakeRoute(employeeId, routeId);
+        assertEmployeeCanTakeRoute(employeeId, routeId, date);
       }
       await putScheduleCell({ date, route_id: Number(routeId), employee_id: employeeId });
 
@@ -815,7 +816,7 @@ const prepareRoutesSheet = () => {
         .filter(emp => {
           const empId = emp.id.toString();
 
-          if (!canAssignEmployeeToRouteWithPair(emp, route, routes)) return false;
+          if (!canAssignEmployeeToRouteWithPair(emp, route, routes, date)) return false;
 
           // Jeśli pracownik jest już na którejś trasie z pary → dopuść (żeby móc edytować)
           for (const rid of pairIds) {

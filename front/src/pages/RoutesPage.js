@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import Popup from '../components/Popup';
 import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
 import { formatYesNo } from '../utils/routeAssignment';
+import { formatOperatingDays, DEFAULT_OPERATING_DAYS, normalizeOperatingDays } from '../utils/routeOperatingDays';
 import { logRouteLicense } from '../utils/licenseLog';
+import RouteOperatingDaysPicker from '../components/RouteOperatingDaysPicker';
+import '../styles/RouteOperatingDaysPicker.css';
 
 function RoutesPage() {
   const [routes, setRoutes] = useState([]);
@@ -22,6 +25,7 @@ function RoutesPage() {
   const [linkedRouteId, setLinkedRouteId] = useState('');
   const [requiredLicenseCategory, setRequiredLicenseCategory] = useState('B');
   const [requiresSpecialPermissions, setRequiresSpecialPermissions] = useState(false);
+  const [operatingDays, setOperatingDays] = useState([...DEFAULT_OPERATING_DAYS]);
 
   // Zarządzanie segmentami czasu
   const [segments, setSegments] = useState([]);
@@ -84,6 +88,7 @@ function RoutesPage() {
     setSegmentEnd('');
     setRequiredLicenseCategory('B');
     setRequiresSpecialPermissions(false);
+    setOperatingDays([...DEFAULT_OPERATING_DAYS]);
     setIsPopupOpen(true);
   };
 
@@ -104,6 +109,7 @@ function RoutesPage() {
     setSegmentEnd('');
     setRequiredLicenseCategory(route.required_license_category || 'B');
     setRequiresSpecialPermissions(!!route.requires_special_permissions);
+    setOperatingDays(normalizeOperatingDays(route.operating_days));
     setIsPopupOpen(true);
   };
 
@@ -154,6 +160,7 @@ function RoutesPage() {
       linked_route_id: linkedRouteId || null,
       required_license_category: requiredLicenseCategory || 'B',
       requires_special_permissions: requiresSpecialPermissions,
+      operating_days: operatingDays,
     };
     logRouteLicense('3. wysyłam do API', routeData);
 
@@ -200,6 +207,7 @@ function RoutesPage() {
             <th onClick={() => sortData('name')}>Nazwa</th>
             <th onClick={() => sortData('main_city_id')}>ID Głównego Miasta</th>
             <th onClick={() => sortData('required_license_category')}>Wym. kat.</th>
+            <th>Dni</th>
             <th onClick={() => sortData('requires_special_permissions')}>Spec. upr.</th>
             <th>Godziny pracy</th>
             <th>Akcje</th>
@@ -212,6 +220,7 @@ function RoutesPage() {
               <td>{r.name}</td>
               <td>{r.main_city_id}</td>
               <td>{r.required_license_category || 'B'}</td>
+              <td>{formatOperatingDays(r)}</td>
               <td>{formatYesNo(r.requires_special_permissions)}</td>
               <td>{JSON.stringify(r.working_hours)}</td>
               <td className="table-actions">
@@ -325,6 +334,10 @@ function RoutesPage() {
               {' '}Wymaga specjalnych uprawnień
             </label>
           </div>
+          <RouteOperatingDaysPicker
+            selectedDays={operatingDays}
+            onChange={setOperatingDays}
+          />
           <button
             type="submit"
             className="btn-primary"

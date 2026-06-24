@@ -4,6 +4,7 @@ const {
   sortRoutesByAssignmentPriority,
   compareEmployeesForRoute,
 } = require('./routeAssignment');
+const { isRouteOperatingOnDate } = require('./routeOperatingDays');
 
 const daysInMonth = (month, year) => new Date(year, month, 0).getDate();
 
@@ -111,6 +112,8 @@ const fillRouteOnDay = ({
   assignments,
   user_id,
 }) => {
+  if (!isRouteOperatingOnDate(route, date)) return;
+
   if (findRouteAssignment(date, route.id, workingSchedules)) return;
 
   const existingPairAssignment = pairRoute
@@ -123,7 +126,7 @@ const fillRouteOnDay = ({
     );
     if (
       pairedEmployee &&
-      canAssignEmployeeToRouteWithPair(pairedEmployee, route, routes) &&
+      canAssignEmployeeToRouteWithPair(pairedEmployee, route, routes, date) &&
       !hasLabelOnDay(pairedEmployee.id, date, workingSchedules)
     ) {
       pushAssignment(assignments, workingSchedules, {
@@ -137,7 +140,7 @@ const fillRouteOnDay = ({
   }
 
   const candidates = employees.filter((emp) => {
-    if (!canAssignEmployeeToRouteWithPair(emp, route, routes)) return false;
+    if (!canAssignEmployeeToRouteWithPair(emp, route, routes, date)) return false;
     if (hasLabelOnDay(emp.id, date, workingSchedules)) return false;
     if (isEmployeeBusyOnDay(emp.id, date, workingSchedules, routes, route.id)) return false;
     return true;
