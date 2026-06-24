@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { decorateWorksheet } from './elements/decorateWorksheet';
 import { canAssignEmployeeToRouteWithPair, getAssignmentBlockReason, findPairRoute, sortRoutesByAssignmentPriority } from '../utils/routeAssignment';
+import { hasEmployeeLabelOnDay } from '../utils/scheduleLabels';
 import Popup from '../components/Popup';
 import '../styles/ScheduleView.css';
 import '../styles/ScheduleDayMenu.css';
@@ -175,6 +176,7 @@ function ScheduleView({ cityId }) {
     const reason = getAssignmentBlockReason(employee, route, {
       pairedRoute: findPairRoute(route, routes),
       date,
+      schedules,
     });
     if (reason) {
       throw new Error(reason);
@@ -306,10 +308,18 @@ function ScheduleView({ cityId }) {
 
     const employee = employees.find(e => e.id.toString() === employeeId.toString());
 
+    if (hasEmployeeLabelOnDay(employeeId, date, schedules)) {
+      const labelOptions = labels.map(l => ({
+        value: `L:${l.code}`,
+        label: `${l.code}`
+      }));
+      return [{ value: '', label: '-- brak --' }, ...labelOptions];
+    }
+
     const availableRoutes = sortRoutesByAssignmentPriority(
       routes.filter((r) => {
         if (assignedRouteIds.includes(r.id.toString())) return false;
-        return canAssignEmployeeToRouteWithPair(employee, r, routes, date);
+        return canAssignEmployeeToRouteWithPair(employee, r, routes, date, schedules);
       })
     );
 
@@ -878,7 +888,7 @@ const prepareRoutesSheet = () => {
         .filter(emp => {
           const empId = emp.id.toString();
 
-          if (!canAssignEmployeeToRouteWithPair(emp, route, routes, date)) return false;
+          if (!canAssignEmployeeToRouteWithPair(emp, route, routes, date, schedules)) return false;
 
           // Jeśli pracownik jest już na którejś trasie z pary → dopuść (żeby móc edytować)
           for (const rid of pairIds) {

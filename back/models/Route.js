@@ -35,6 +35,12 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: false,
       comment: 'Czy trasa wymaga specjalnych uprawnień pracownika',
     },
+    requires_staffing: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
+      comment: 'Czy trasa musi być obsadzona (false = może zostać pusta przy braku kierowców)',
+    },
     linked_route_id: {
       type: DataTypes.INTEGER,
       allowNull: true,

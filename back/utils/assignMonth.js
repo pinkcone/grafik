@@ -1,6 +1,7 @@
 const { findPairRoute, canAssignEmployeeToRouteWithPair } = require('./routeAssignment');
 const { isRouteOperatingOnDate } = require('./routeOperatingDays');
 const { generateDw5Proposals } = require('./scheduleRules');
+const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 
 const daysInMonth = (month, year) => new Date(year, month, 0).getDate();
 
@@ -9,14 +10,6 @@ const buildDate = (year, month, day) =>
 
 const findRouteAssignment = (date, routeId, schedules) =>
   schedules.find((s) => s.date === date && s.route_id?.toString() === routeId.toString());
-
-const hasLabelOnDay = (employeeId, date, schedules) =>
-  schedules.some(
-    (s) =>
-      s.employee_id?.toString() === employeeId.toString() &&
-      s.date === date &&
-      s.label
-  );
 
 const getPairRouteIdsIncludingSelf = (routeId, routes) => {
   const idStr = routeId.toString();
@@ -75,8 +68,8 @@ function generateMonthRouteAssignments({
     const date = buildDate(year, month, day);
     if (!isRouteOperatingOnDate(route, date)) continue;
     if (findRouteAssignment(date, route.id, workingSchedules)) continue;
-    if (!canAssignEmployeeToRouteWithPair(employee, route, routes, date)) continue;
-    if (hasLabelOnDay(employee.id, date, workingSchedules)) continue;
+    if (!canAssignEmployeeToRouteWithPair(employee, route, routes, date, workingSchedules)) continue;
+    if (hasEmployeeLabelOnDay(employee.id, date, workingSchedules)) continue;
     if (isEmployeeBusyOnDay(employee.id, date, workingSchedules, routes, route.id)) continue;
 
     pushRouteAssignment(routeAssignments, workingSchedules, {
@@ -88,8 +81,8 @@ function generateMonthRouteAssignments({
 
     if (pairRoute && !findRouteAssignment(date, pairRoute.id, workingSchedules)) {
       if (
-        canAssignEmployeeToRouteWithPair(employee, pairRoute, routes, date) &&
-        !hasLabelOnDay(employee.id, date, workingSchedules) &&
+        canAssignEmployeeToRouteWithPair(employee, pairRoute, routes, date, workingSchedules) &&
+        !hasEmployeeLabelOnDay(employee.id, date, workingSchedules) &&
         !isEmployeeBusyOnDay(employee.id, date, workingSchedules, routes, pairRoute.id)
       ) {
         pushRouteAssignment(routeAssignments, workingSchedules, {

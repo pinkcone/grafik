@@ -1,6 +1,7 @@
 const { canDriveWithCategory } = require('./licenseCategories');
 const { getOperatingDayBlockReason } = require('./routeOperatingDays');
 const { getSaturdayAssignmentBlockReason } = require('./scheduleRules');
+const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 
 const toBoolean = (value) => {
   if (value === true || value === 1 || value === '1' || value === 'true') return true;
@@ -9,6 +10,13 @@ const toBoolean = (value) => {
 };
 
 const hasSpecialPermissions = (value) => toBoolean(value);
+
+/** Domyślnie true — trasa musi być obsadzona, jeśli są dostępni kierowcy */
+const routeRequiresStaffing = (route) => {
+  if (!route) return true;
+  if (route.requires_staffing === undefined || route.requires_staffing === null) return true;
+  return toBoolean(route.requires_staffing);
+};
 
 const findPairRoute = (route, allRoutes = []) => {
   if (!route || !Array.isArray(allRoutes)) return null;
@@ -24,10 +32,14 @@ const findPairRoute = (route, allRoutes = []) => {
 };
 
 const getAssignmentBlockReason = (employee, route, options = {}) => {
-  const { pairedRoute = null, date = null } = options;
+  const { pairedRoute = null, date = null, schedules = null } = options;
 
   if (!employee || !route) {
     return 'Brak danych pracownika lub trasy.';
+  }
+
+  if (date && schedules && hasEmployeeLabelOnDay(employee.id, date, schedules)) {
+    return 'Pracownik ma wpisaną etykietę tego dnia — nie można przypisać trasy.';
   }
 
   const dayReason = getOperatingDayBlockReason(route, date);
@@ -79,9 +91,9 @@ const canAssignEmployeeToRoute = (employee, route, options = {}) => {
   return getAssignmentBlockReason(employee, route, options) === null;
 };
 
-const canAssignEmployeeToRouteWithPair = (employee, route, allRoutes = [], date = null) => {
+const canAssignEmployeeToRouteWithPair = (employee, route, allRoutes = [], date = null, schedules = null) => {
   const pairedRoute = findPairRoute(route, allRoutes);
-  return canAssignEmployeeToRoute(employee, route, { pairedRoute, date });
+  return canAssignEmployeeToRoute(employee, route, { pairedRoute, date, schedules });
 };
 
 /** Wyższy tier = trudniejsza trasa → uzupełniać wcześniej */
@@ -133,6 +145,7 @@ const compareEmployeesForRoute = (employeeA, employeeB, route, allRoutes = []) =
 module.exports = {
   toBoolean,
   hasSpecialPermissions,
+  routeRequiresStaffing,
   findPairRoute,
   getAssignmentBlockReason,
   canAssignEmployeeToRoute,

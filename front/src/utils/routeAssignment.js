@@ -1,6 +1,7 @@
 import { canDriveWithCategory } from './licenseCategories';
 import { getOperatingDayBlockReason } from './routeOperatingDays';
 import { getSaturdayAssignmentBlockReason } from './scheduleRules';
+import { hasEmployeeLabelOnDay } from './scheduleLabels';
 
 export const toBoolean = (value) => {
   if (value === true || value === 1 || value === '1' || value === 'true') return true;
@@ -9,6 +10,12 @@ export const toBoolean = (value) => {
 };
 
 export const hasSpecialPermissions = (value) => toBoolean(value);
+
+export const routeRequiresStaffing = (route) => {
+  if (!route) return true;
+  if (route.requires_staffing === undefined || route.requires_staffing === null) return true;
+  return toBoolean(route.requires_staffing);
+};
 
 export const findPairRoute = (route, allRoutes = []) => {
   if (!route || !Array.isArray(allRoutes)) return null;
@@ -24,10 +31,14 @@ export const findPairRoute = (route, allRoutes = []) => {
 };
 
 export const getAssignmentBlockReason = (employee, route, options = {}) => {
-  const { pairedRoute = null, date = null } = options;
+  const { pairedRoute = null, date = null, schedules = null } = options;
 
   if (!employee || !route) {
     return 'Brak danych pracownika lub trasy.';
+  }
+
+  if (date && schedules && hasEmployeeLabelOnDay(employee.id, date, schedules)) {
+    return 'Pracownik ma wpisaną etykietę tego dnia — nie można przypisać trasy.';
   }
 
   const dayReason = getOperatingDayBlockReason(route, date);
@@ -79,9 +90,9 @@ export const canAssignEmployeeToRoute = (employee, route, options = {}) => {
   return getAssignmentBlockReason(employee, route, options) === null;
 };
 
-export const canAssignEmployeeToRouteWithPair = (employee, route, allRoutes = [], date = null) => {
+export const canAssignEmployeeToRouteWithPair = (employee, route, allRoutes = [], date = null, schedules = null) => {
   const pairedRoute = findPairRoute(route, allRoutes);
-  return canAssignEmployeeToRoute(employee, route, { pairedRoute, date });
+  return canAssignEmployeeToRoute(employee, route, { pairedRoute, date, schedules });
 };
 
 export const getRouteRestrictionTier = (route) => {

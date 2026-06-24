@@ -10,6 +10,12 @@ const toBoolean = (value) => {
 
 const hasSpecialPermissions = (value) => toBoolean(value);
 
+const routeRequiresStaffing = (route) => {
+  if (!route) return true;
+  if (route.requires_staffing === undefined || route.requires_staffing === null) return true;
+  return toBoolean(route.requires_staffing);
+};
+
 const parseWorkingHours = (wh) => {
   if (!wh) return null;
   if (typeof wh === 'object') return wh;
@@ -34,6 +40,7 @@ const hasUnfilledRoutesOnDay = (date, routes, schedules) => {
 
   return routes.some((route) => {
     if (!routeHasSegments(route)) return false;
+    if (!routeRequiresStaffing(route)) return false;
     if (!isRouteOperatingOnDate(route, date)) return false;
     return !findRouteAssignment(date, route.id, schedules);
   });

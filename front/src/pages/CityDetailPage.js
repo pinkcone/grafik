@@ -50,6 +50,7 @@ function CityDetailPage() {
   const [segmentEnd, setSegmentEnd] = useState('');
   const [routeLicenseCategory, setRouteLicenseCategory] = useState('B');
   const [routeRequiresSpecialPermissions, setRouteRequiresSpecialPermissions] = useState(false);
+  const [routeRequiresStaffing, setRouteRequiresStaffing] = useState(true);
   const [routeOperatingDays, setRouteOperatingDays] = useState([...DEFAULT_OPERATING_DAYS]);
 
   useEffect(() => {
@@ -225,6 +226,7 @@ function CityDetailPage() {
     setRouteLinkedId('');
     setRouteLicenseCategory('B');
     setRouteRequiresSpecialPermissions(false);
+    setRouteRequiresStaffing(true);
     setRouteOperatingDays([...DEFAULT_OPERATING_DAYS]);
     setIsRouteModalOpen(true);
   };
@@ -254,6 +256,7 @@ function CityDetailPage() {
     setRouteLinkedId(rt.linked_route_id || '');
     setRouteLicenseCategory(rt.required_license_category || 'B');
     setRouteRequiresSpecialPermissions(!!rt.requires_special_permissions);
+    setRouteRequiresStaffing(rt.requires_staffing !== false && rt.requires_staffing !== 0);
     setRouteOperatingDays(normalizeOperatingDays(rt.operating_days));
     setIsRouteModalOpen(true);
   };
@@ -288,6 +291,7 @@ function CityDetailPage() {
       linked_route_id: routeLinkedId || null,
       required_license_category: routeLicenseCategory || 'B',
       requires_special_permissions: routeRequiresSpecialPermissions,
+      requires_staffing: routeRequiresStaffing,
       operating_days: routeOperatingDays,
     };
     logRouteLicense('3. wysyłam do API', routeData);
@@ -433,6 +437,7 @@ function CityDetailPage() {
                 <th>Wym. kat.</th>
                 <th>Dni</th>
                 <th>Spec. upr.</th>
+                <th>Obsadzenie</th>
                 <th>Godziny pracy</th>
                 <th>Trasa powiązana</th>
                 <th>Dodatkowe miasto</th>
@@ -447,6 +452,7 @@ function CityDetailPage() {
                   <td>{rt.required_license_category || 'B'}</td>
                   <td>{formatOperatingDays(rt)}</td>
                   <td>{formatYesNo(rt.requires_special_permissions)}</td>
+                  <td>{formatYesNo(rt.requires_staffing !== false && rt.requires_staffing !== 0)}</td>
                   <td>
                     {(() => {
                       // Jeśli working_hours jest stringiem, spróbuj sparsować
@@ -594,6 +600,19 @@ function CityDetailPage() {
               />
               {' '}Wymaga specjalnych uprawnień
             </label>
+          </div>
+          <div>
+            <label>
+              <input
+                type="checkbox"
+                checked={routeRequiresStaffing}
+                onChange={(e) => setRouteRequiresStaffing(e.target.checked)}
+              />
+              {' '}Trasa musi być obsadzona
+            </label>
+            <p style={{ margin: '4px 0 0', fontSize: '0.9em', opacity: 0.85 }}>
+              Odznacz, jeśli trasa może zostać pusta przy braku dostępnych kierowców.
+            </p>
           </div>
           <RouteOperatingDaysPicker
             selectedDays={routeOperatingDays}

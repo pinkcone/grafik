@@ -22,6 +22,7 @@ exports.createRoute = async (req, res) => {
       linked_route_id,
       required_license_category,
       requires_special_permissions,
+      requires_staffing,
       operating_days,
     } = req.body;
     const user_id = req.user.id;
@@ -33,6 +34,7 @@ exports.createRoute = async (req, res) => {
       linked_route_id,
       required_license_category: required_license_category || 'B',
       requires_special_permissions: toBoolean(requires_special_permissions),
+      requires_staffing: requires_staffing === undefined ? true : toBoolean(requires_staffing),
       user_id,
     });
     const days = await syncRouteDays(route.id, operating_days);
@@ -68,6 +70,7 @@ exports.updateRoute = async (req, res) => {
       linked_route_id,
       required_license_category,
       requires_special_permissions,
+      requires_staffing,
       operating_days,
     } = req.body;
     const user_id = req.user.id;
@@ -81,6 +84,7 @@ exports.updateRoute = async (req, res) => {
       linked_route_id,
       required_license_category: required_license_category || 'B',
       requires_special_permissions: toBoolean(requires_special_permissions),
+      requires_staffing: requires_staffing === undefined ? route.requires_staffing : toBoolean(requires_staffing),
     });
     let days;
     if (operating_days !== undefined) {

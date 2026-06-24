@@ -3,6 +3,7 @@ const {
   canAssignEmployeeToRouteWithPair,
   sortRoutesByAssignmentPriority,
   compareEmployeesForRoute,
+  routeRequiresStaffing,
 } = require('./routeAssignment');
 const { isRouteOperatingOnDate } = require('./routeOperatingDays');
 const { generateDw5Proposals } = require('./scheduleRules');
@@ -55,14 +56,6 @@ const getPairRouteIdsIncludingSelf = (routeId, routes) => {
 
 const findRouteAssignment = (date, routeId, schedules) =>
   schedules.find((s) => s.date === date && s.route_id?.toString() === routeId.toString());
-
-const hasLabelOnDay = (employeeId, date, schedules) =>
-  schedules.some(
-    (s) =>
-      s.employee_id?.toString() === employeeId.toString() &&
-      s.date === date &&
-      s.label
-  );
 
 const isEmployeeBusyOnDay = (employeeId, date, schedules, routes, routeIdForPair) => {
   const pairIds = new Set(getPairRouteIdsIncludingSelf(routeIdForPair, routes).map(String));
@@ -124,8 +117,7 @@ const droveRouteYesterday = (employeeId, routeId, date, schedules, routes) => {
 
 const canEmployeeTakeRouteOnDay = (employee, route, routes, date, schedules) => {
   if (!employee) return false;
-  if (!canAssignEmployeeToRouteWithPair(employee, route, routes, date)) return false;
-  if (hasLabelOnDay(employee.id, date, schedules)) return false;
+  if (!canAssignEmployeeToRouteWithPair(employee, route, routes, date, schedules)) return false;
   if (isEmployeeBusyOnDay(employee.id, date, schedules, routes, route.id)) return false;
   return true;
 };
@@ -291,6 +283,13 @@ const assignDriverToRouteOnDay = ({
  * 2) zostają puste sloty — dopiero wtedy dokładamy drugie trasy.
  * Zablokowane (ręczne) sloty tras nie są ruszane.
  */
+const sortRoutesForDayFill = (routes) =>
+  sortRoutesByAssignmentPriority(routes).sort((a, b) => {
+    const mandatoryA = routeRequiresStaffing(a) ? 0 : 1;
+    const mandatoryB = routeRequiresStaffing(b) ? 0 : 1;
+    return mandatoryA - mandatoryB;
+  });
+
 const fillDay = ({
   date,
   employees,
@@ -302,7 +301,7 @@ const fillDay = ({
   lockedRouteSlots,
 }) => {
   const day = parseInt(date.split('-')[2], 10);
-  const sortedRoutes = sortRoutesByAssignmentPriority(routes).filter((route) =>
+  const sortedRoutes = sortRoutesForDayFill(routes).filter((route) =>
     isRouteOperatingOnDate(route, date)
   );
 

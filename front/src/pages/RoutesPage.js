@@ -25,6 +25,7 @@ function RoutesPage() {
   const [linkedRouteId, setLinkedRouteId] = useState('');
   const [requiredLicenseCategory, setRequiredLicenseCategory] = useState('B');
   const [requiresSpecialPermissions, setRequiresSpecialPermissions] = useState(false);
+  const [requiresStaffing, setRequiresStaffing] = useState(true);
   const [operatingDays, setOperatingDays] = useState([...DEFAULT_OPERATING_DAYS]);
 
   // Zarządzanie segmentami czasu
@@ -88,6 +89,7 @@ function RoutesPage() {
     setSegmentEnd('');
     setRequiredLicenseCategory('B');
     setRequiresSpecialPermissions(false);
+    setRequiresStaffing(true);
     setOperatingDays([...DEFAULT_OPERATING_DAYS]);
     setIsPopupOpen(true);
   };
@@ -109,6 +111,7 @@ function RoutesPage() {
     setSegmentEnd('');
     setRequiredLicenseCategory(route.required_license_category || 'B');
     setRequiresSpecialPermissions(!!route.requires_special_permissions);
+    setRequiresStaffing(route.requires_staffing !== false && route.requires_staffing !== 0);
     setOperatingDays(normalizeOperatingDays(route.operating_days));
     setIsPopupOpen(true);
   };
@@ -160,6 +163,7 @@ function RoutesPage() {
       linked_route_id: linkedRouteId || null,
       required_license_category: requiredLicenseCategory || 'B',
       requires_special_permissions: requiresSpecialPermissions,
+      requires_staffing: requiresStaffing,
       operating_days: operatingDays,
     };
     logRouteLicense('3. wysyłam do API', routeData);
@@ -209,6 +213,7 @@ function RoutesPage() {
             <th onClick={() => sortData('required_license_category')}>Wym. kat.</th>
             <th>Dni</th>
             <th onClick={() => sortData('requires_special_permissions')}>Spec. upr.</th>
+            <th>Obsadzenie</th>
             <th>Godziny pracy</th>
             <th>Akcje</th>
           </tr>
@@ -222,6 +227,7 @@ function RoutesPage() {
               <td>{r.required_license_category || 'B'}</td>
               <td>{formatOperatingDays(r)}</td>
               <td>{formatYesNo(r.requires_special_permissions)}</td>
+              <td>{formatYesNo(r.requires_staffing !== false && r.requires_staffing !== 0)}</td>
               <td>{JSON.stringify(r.working_hours)}</td>
               <td className="table-actions">
                 <button type="button" className="btn-sm" onClick={() => handleEditRouteClick(r)}>Edytuj</button>
@@ -333,6 +339,19 @@ function RoutesPage() {
               />
               {' '}Wymaga specjalnych uprawnień
             </label>
+          </div>
+          <div>
+            <label>
+              <input
+                type="checkbox"
+                checked={requiresStaffing}
+                onChange={(e) => setRequiresStaffing(e.target.checked)}
+              />
+              {' '}Trasa musi być obsadzona
+            </label>
+            <p style={{ margin: '4px 0 0', fontSize: '0.9em', opacity: 0.85 }}>
+              Odznacz, jeśli trasa może zostać pusta przy braku dostępnych kierowców.
+            </p>
           </div>
           <RouteOperatingDaysPicker
             selectedDays={operatingDays}

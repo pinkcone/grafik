@@ -7,6 +7,7 @@ const { generateAutoFillAssignments } = require('../utils/scheduleAutoFill');
 const { generateMonthRouteAssignments } = require('../utils/assignMonth');
 const { generateDw5Proposals } = require('../utils/scheduleRules');
 const { getIsoWeekday } = require('../utils/routeOperatingDays');
+const { hasEmployeeLabelOnDay } = require('../utils/scheduleLabels');
 
 const parseWorkingHours = (wh) => {
   if (!wh) return null;
@@ -130,6 +131,15 @@ exports.updateScheduleCell = async (req, res) => {
     const user_id = req.user.id;
 
     if (route_id && employee_id) {
+      const dayEntries = await Schedule.findAll({ where: { date, employee_id } });
+      const daySchedules = dayEntries.map((s) => (s.toJSON ? s.toJSON() : s));
+
+      if (hasEmployeeLabelOnDay(employee_id, date, daySchedules)) {
+        return res.status(400).json({
+          message: 'Pracownik ma wpisaną etykietę tego dnia — nie można przypisać trasy.',
+        });
+      }
+
       const [employee, route] = await Promise.all([
         Employee.findOne({ where: { id: employee_id, user_id } }),
         Route.findOne({ where: { id: route_id, user_id } }),
@@ -143,8 +153,8 @@ exports.updateScheduleCell = async (req, res) => {
       const routeWithDays = await enrichRouteWithOperatingDays(route);
       const userRoutes = await attachOperatingDays(await Route.findAll({ where: { user_id } }));
       const pairedRoute = findPairRoute(routeWithDays, userRoutes);
-      if (!canAssignEmployeeToRoute(employee, routeWithDays, { pairedRoute, date })) {
-        const reason = getAssignmentBlockReason(employee, routeWithDays, { pairedRoute, date });
+      if (!canAssignEmployeeToRoute(employee, routeWithDays, { pairedRoute, date, schedules: daySchedules })) {
+        const reason = getAssignmentBlockReason(employee, routeWithDays, { pairedRoute, date, schedules: daySchedules });
         return res.status(400).json({
           message: reason || 'Pracownik nie spełnia wymagań trasy.',
         });

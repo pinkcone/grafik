@@ -43,6 +43,15 @@ async function ensureLicenseColumns(sequelize) {
       comment: 'Czy trasa wymaga specjalnych uprawnień pracownika',
     });
   }
+
+  if (routes && !routes.requires_staffing) {
+    await qi.addColumn('routes', 'requires_staffing', {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true,
+      comment: 'Czy trasa musi być obsadzona (false = może zostać pusta przy braku kierowców)',
+    });
+  }
 }
 
 module.exports = { ensureLicenseColumns };
