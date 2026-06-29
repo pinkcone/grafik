@@ -4,6 +4,7 @@ const { Op } = require('sequelize');
 const { canAssignEmployeeToRoute, getAssignmentBlockReason, findPairRoute } = require('../utils/routeAssignment');
 const { enrichRouteWithOperatingDays, attachOperatingDays } = require('../utils/routeDayHelpers');
 const { generateAutoFillAssignments } = require('../utils/scheduleAutoFill');
+const { getQuarterMonths } = require('../utils/scheduleHours');
 const { generateMonthRouteAssignments } = require('../utils/assignMonth');
 const { generateDw5Proposals, isSaturday, planSaturdayDw5Package } = require('../utils/scheduleRules');
 const { hasEmployeeLabelOnDay } = require('../utils/scheduleLabels');
@@ -365,11 +366,17 @@ exports.autoFillRoutes = async (req, res) => {
     const startDate = `${yearNum}-${String(monthNum).padStart(2, '0')}-01`;
     const endDate = `${yearNum}-${String(monthNum).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-    const [employees, routesRaw, schedules] = await Promise.all([
+    const qMonths = getQuarterMonths(monthNum);
+    const startQuarter = `${yearNum}-${String(qMonths[0]).padStart(2, '0')}-01`;
+
+    const [employees, routesRaw, schedules, quarterSchedulesRaw] = await Promise.all([
       Employee.findAll({ where: { city_id: cityId, user_id } }),
       Route.findAll({ where: { main_city_id: cityId, user_id } }),
       Schedule.findAll({
         where: { date: { [Op.between]: [startDate, endDate] } },
+      }),
+      Schedule.findAll({
+        where: { date: { [Op.between]: [startQuarter, endDate] } },
       }),
     ]);
 
@@ -379,11 +386,15 @@ exports.autoFillRoutes = async (req, res) => {
     const citySchedules = schedules.filter((s) =>
       cityEmployeeIds.has(s.employee_id?.toString())
     );
+    const quarterSchedules = quarterSchedulesRaw
+      .filter((s) => cityEmployeeIds.has(s.employee_id?.toString()))
+      .filter((s) => parseInt(s.date.split('-')[1], 10) !== monthNum);
 
     const { routeAssignments, labelAssignments } = generateAutoFillAssignments({
       employees,
       routes: activeRoutes,
       schedules: citySchedules,
+      quarterSchedules,
       month: monthNum,
       year: yearNum,
       user_id,

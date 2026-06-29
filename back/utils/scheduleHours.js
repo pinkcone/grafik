@@ -59,16 +59,46 @@ const getRouteDurationHours = (route) => {
   return totalMinutes / 60;
 };
 
-/** Docelowe godziny w miesiącu: dni robocze (pn–pt) × 8h × część etatu */
-const getTargetMonthHours = (employee, month, year) => {
-  const partTime = parseFloat(employee?.part_time) || 1;
+const QUARTER_MONTHS = [
+  [1, 2, 3],   // styczeń–marzec
+  [4, 5, 6],   // kwiecień–czerwiec
+  [7, 8, 9],   // lipiec–wrzesień
+  [10, 11, 12], // październik–grudzień
+];
+
+const getQuarterMonths = (month) =>
+  QUARTER_MONTHS.find((q) => q.includes(month)) || [month];
+
+const getEmployeePartTime = (employee) => {
+  const pt = parseFloat(employee?.part_time);
+  if (!Number.isFinite(pt) || pt <= 0) return 1;
+  return pt;
+};
+
+/** Docelowe godziny na jeden dzień roboczy (8h × etat). */
+const getTargetDailyHours = (employee) => 8 * getEmployeePartTime(employee);
+
+const countWeekdaysInMonth = (month, year) => {
   const dim = daysInMonth(month, year);
   let weekdays = 0;
   for (let d = 1; d <= dim; d++) {
     const wd = getIsoWeekday(buildDate(year, month, d));
     if (wd >= 1 && wd <= 5) weekdays += 1;
   }
-  return weekdays * 8 * partTime;
+  return weekdays;
+};
+
+/** Docelowe godziny w miesiącu: dni robocze (pn–pt) × 8h × część etatu */
+const getTargetMonthHours = (employee, month, year) => {
+  return countWeekdaysInMonth(month, year) * getTargetDailyHours(employee);
+};
+
+/** Docelowe godziny w kwartale (pn–pt × 8h × etat, suma miesięcy kwartału). */
+const getTargetQuarterHours = (employee, month, year) => {
+  return getQuarterMonths(month).reduce(
+    (sum, m) => sum + countWeekdaysInMonth(m, year) * getTargetDailyHours(employee),
+    0
+  );
 };
 
 const getEmployeeMonthHours = (employeeId, schedules, routes, month, year) => {
@@ -91,6 +121,21 @@ const getEmployeeMonthHours = (employeeId, schedules, routes, month, year) => {
   return total;
 };
 
+const getEmployeeQuarterHours = (employeeId, schedules, routes, month, year) => {
+  const qMonths = getQuarterMonths(month);
+  let total = 0;
+  for (const m of qMonths) {
+    total += getEmployeeMonthHours(employeeId, schedules, routes, m, year);
+  }
+  return total;
+};
+
+const getQuarterHourGap = (employee, schedules, routes, month, year) => {
+  const target = getTargetQuarterHours(employee, month, year);
+  const current = getEmployeeQuarterHours(employee.id, schedules, routes, month, year);
+  return target - current;
+};
+
 const getHoursRatio = (employee, schedules, routes, month, year) => {
   const target = getTargetMonthHours(employee, month, year);
   if (target <= 0) return 0;
@@ -109,8 +154,15 @@ module.exports = {
   getRouteDurationHours,
   getRouteTimeSegments,
   routesTimeOverlap,
+  getQuarterMonths,
+  getEmployeePartTime,
+  getTargetDailyHours,
+  countWeekdaysInMonth,
   getTargetMonthHours,
+  getTargetQuarterHours,
   getEmployeeMonthHours,
+  getEmployeeQuarterHours,
+  getQuarterHourGap,
   getHoursRatio,
   wouldExceedTargetHours,
 };
