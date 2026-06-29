@@ -8,16 +8,25 @@ const {
   hasSpecialPermissions,
 } = require('./routeAssignment');
 const { isRouteOperatingOnDate, getIsoWeekday } = require('./routeOperatingDays');
-const { generateDw5Proposals, isSaturday, planSaturdayDw5Package } = require('./scheduleRules');
+const {
+  generateDw5Proposals,
+  isSaturday,
+  planSaturdayDw5Package,
+  hasDw5AfterSaturday,
+  getDw5CandidateWeekdays,
+  DW5_LABEL_CODE,
+} = require('./scheduleRules');
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 const {
   getEmployeeRouteSlotCountOnDay,
   canEmployeeHaveAnotherRouteOnDay,
 } = require('./scheduleConstraints');
+const { getAssignmentBlockReason: getRouteAssignmentBlockReason } = require('./routeAssignment');
 const {
   getRouteDurationHours,
   getTargetMonthHours,
   getEmployeeMonthHours,
+  routesTimeOverlap,
 } = require('./scheduleHours');
 
 const daysInMonth = (month, year) => new Date(year, month, 0).getDate();
@@ -144,6 +153,11 @@ const canEmployeeTakeRouteOnDay = (
 };
 
 const pushDw5Package = (ctx, employeeId, saturdayDate) => {
+  // Tylko JEDEN DW5 na tydzień po danej sobocie.
+  if (hasDw5AfterSaturday(employeeId, saturdayDate, ctx.workingSchedules)) {
+    return true;
+  }
+
   const pkg = planSaturdayDw5Package(
     saturdayDate,
     employeeId,
@@ -155,17 +169,41 @@ const pushDw5Package = (ctx, employeeId, saturdayDate) => {
   );
   if (!pkg) return false;
 
-  const already = ctx.workingSchedules.some(
+  ctx.labelAssignments.push(pkg.labelProposal);
+  ctx.workingSchedules.push(pkg.scheduleEntry);
+  return true;
+};
+
+/** Usuwa DW5 dodany przez algorytm po danej sobocie (gdy znika ostatnia trasa sobotnia tego tygodnia). */
+const removeDw5AfterSaturday = (ctx, employeeId, saturdayDate) => {
+  const stillWorksSaturday = ctx.workingSchedules.some(
     (s) =>
       s.employee_id?.toString() === employeeId.toString() &&
-      s.date === pkg.dw5Date &&
-      s.label === pkg.scheduleEntry.label
+      s.date === saturdayDate &&
+      s.route_id
   );
-  if (!already) {
-    ctx.labelAssignments.push(pkg.labelProposal);
-    ctx.workingSchedules.push(pkg.scheduleEntry);
-  }
-  return true;
+  if (stillWorksSaturday) return;
+
+  const candidateDays = new Set(getDw5CandidateWeekdays(saturdayDate));
+  const isInitial = (date) => ctx.initialEmployeeDays.has(employeeDayKey(date, employeeId));
+
+  ctx.workingSchedules = ctx.workingSchedules.filter(
+    (s) =>
+      !(
+        s.employee_id?.toString() === employeeId.toString() &&
+        s.label === DW5_LABEL_CODE &&
+        candidateDays.has(s.date) &&
+        !isInitial(s.date)
+      )
+  );
+  ctx.labelAssignments = ctx.labelAssignments.filter(
+    (l) =>
+      !(
+        l.employee_id?.toString() === employeeId.toString() &&
+        l.label === DW5_LABEL_CODE &&
+        candidateDays.has(l.date)
+      )
+  );
 };
 
 const pushAssignment = (ctx, { date, route_id, employee_id }) => {
@@ -282,6 +320,10 @@ const removeRouteSlot = (date, routeId, ctx) => {
     if (pairEntry && pairEntry.employee_id?.toString() === employeeId?.toString()) {
       removeOne(pairRoute.id);
     }
+  }
+
+  if (isSaturday(date) && employeeId != null) {
+    removeDw5AfterSaturday(ctx, employeeId, date);
   }
 
   return true;
@@ -408,6 +450,7 @@ const findBestSwapForEmployee = (employee, ctx) => {
       const backup = {
         workingSchedules: ctx.workingSchedules.map((s) => ({ ...s })),
         assignments: ctx.assignments.map((a) => ({ ...a })),
+        labelAssignments: ctx.labelAssignments.map((l) => ({ ...l })),
       };
 
       removeRouteSlot(date, route.id, ctx);
@@ -444,6 +487,7 @@ const findBestSwapForEmployee = (employee, ctx) => {
 
       ctx.workingSchedules = backup.workingSchedules;
       ctx.assignments = backup.assignments;
+      ctx.labelAssignments = backup.labelAssignments;
     }
   }
 
@@ -756,14 +800,143 @@ const fillRemainingMandatorySlots = (ctx) => {
   }
 };
 
+/** Trasy (obiekty) przypisane pracownikowi danego dnia. */
+const getEmployeeRoutesOnDay = (employeeId, date, ctx) =>
+  ctx.workingSchedules
+    .filter(
+      (s) =>
+        s.date === date &&
+        s.employee_id?.toString() === employeeId.toString() &&
+        s.route_id
+    )
+    .map((s) => ctx.routes.find((r) => r.id.toString() === s.route_id.toString()))
+    .filter(Boolean);
+
+/** Czy trasa (i jej para) nakłada się czasowo na trasy, które pracownik już ma tego dnia. */
+const wouldOverlapEmployeeDay = (employeeId, route, date, ctx) => {
+  const existing = getEmployeeRoutesOnDay(employeeId, date, ctx);
+  if (existing.length === 0) return false;
+
+  const candidateRoutes = [route];
+  const pair = findPairRoute(route, ctx.routes);
+  if (pair) candidateRoutes.push(pair);
+
+  return candidateRoutes.some((cand) =>
+    existing.some((ex) => routesTimeOverlap(cand, ex))
+  );
+};
+
+/**
+ * Czy można DOŁOŻYĆ pracownikowi kolejną (niezależną) trasę tego dnia.
+ * Wymaga: pracownik ma już co najmniej 1 trasę, brak etykiety, godziny się nie pokrywają,
+ * uprawnienia pasują (pomijamy tylko blokadę „druga trasa").
+ */
+const canStackRouteOnEmployee = (employee, route, date, ctx) => {
+  if (!employee || !route) return false;
+  if (!isEmployeeDayMutable(employee.id, date, ctx.initialEmployeeDays)) return false;
+  if (hasEmployeeLabelOnDay(employee.id, date, ctx.workingSchedules)) return false;
+  if (getEmployeeRouteSlotCountOnDay(employee.id, date, ctx.workingSchedules, ctx.routes) === 0) {
+    return false;
+  }
+  if (!isRouteOperatingOnDate(route, date)) return false;
+  if (findRouteAssignment(date, route.id, ctx.workingSchedules)) return false;
+  if (wouldOverlapEmployeeDay(employee.id, route, date, ctx)) return false;
+
+  const blockReason = getRouteAssignmentBlockReason(employee, route, {
+    pairedRoute: findPairRoute(route, ctx.routes),
+    date,
+    schedules: ctx.workingSchedules,
+    allRoutes: ctx.routes,
+    employeeCount: ctx.employees.length,
+    initialEmployeeDays: ctx.initialEmployeeDays,
+    skipSlotCheck: true,
+  });
+  if (blockReason) return false;
+
+  return true;
+};
+
+/** Dołożenie kolejnej, nienakładającej się trasy do pracownika, który już coś ma tego dnia. */
+const assignStackedRoute = (employee, route, date, ctx) => {
+  if (!canStackRouteOnEmployee(employee, route, date, ctx)) return false;
+
+  if (isSaturday(date)) {
+    const pkg = planSaturdayDw5Package(
+      date,
+      employee.id,
+      ctx.workingSchedules,
+      ctx.routes,
+      ctx.employees.length,
+      ctx.user_id,
+      { initialEmployeeDays: ctx.initialEmployeeDays }
+    );
+    if (!pkg) return false;
+  }
+
+  const pairRoute = findPairRoute(route, ctx.routes);
+  if (!pushAssignment(ctx, { date, route_id: route.id, employee_id: employee.id })) {
+    return false;
+  }
+
+  if (
+    pairRoute &&
+    !findRouteAssignment(date, pairRoute.id, ctx.workingSchedules) &&
+    !wouldOverlapEmployeeDay(employee.id, pairRoute, date, ctx) &&
+    canAssignEmployeeToRouteWithPair(employee, pairRoute, ctx.routes, date, ctx.workingSchedules)
+  ) {
+    pushAssignment(ctx, { date, route_id: pairRoute.id, employee_id: employee.id });
+  }
+
+  if (isSaturday(date)) {
+    pushDw5Package(ctx, employee.id, date);
+  }
+
+  return true;
+};
+
+/**
+ * Faza łączenia: gdy KAŻDY ma już swoją trasę, a zostały nieobsadzone trasy —
+ * dokładamy je pracownikom, którym godziny się nie pokrywają (najpierw najbardziej
+ * pod etatem), żeby żadna trasa nie została pusta.
+ */
+const combineLeftoverRoutes = (ctx) => {
+  for (const date of listWeekdaysInMonth(ctx.month, ctx.year)) {
+    const openRoutes = sortOpenRoutesForFill(ctx.routes, date, ctx);
+
+    for (const route of openRoutes) {
+      if (findRouteAssignment(date, route.id, ctx.workingSchedules)) continue;
+
+      const candidates = ctx.employees
+        .filter((emp) => canStackRouteOnEmployee(emp, route, date, ctx))
+        .sort((a, b) => {
+          const wasteA = Math.max(
+            0,
+            getEmployeeCapabilityTier(a) - getRouteRestrictionTierWithPair(route, ctx.routes)
+          );
+          const wasteB = Math.max(
+            0,
+            getEmployeeCapabilityTier(b) - getRouteRestrictionTierWithPair(route, ctx.routes)
+          );
+          if (wasteA !== wasteB) return wasteA - wasteB;
+          return getHourGap(b, ctx) - getHourGap(a, ctx) || a.id - b.id;
+        });
+
+      if (candidates.length > 0) {
+        assignStackedRoute(candidates[0], route, date, ctx);
+      }
+    }
+  }
+};
+
 /**
  * Auto-fill miesięczny:
  * 1. Snapshot — ręczne wpisy (etykiety, trasy) są zamrożone
- * 2. Kierowca po kierowcy — dopasowanie godzin na cały miesiąc
- * 3. Puste sloty → zamiany z innymi (tylko przypisania algorytmu)
- * 4. Na końcu — wypełnienie obowiązkowych tras
- * 5. Finalizacja — wolni kierowcy + puste trasy (każdy dostaje co może)
- * 6. DW5
+ * 2. Pokrycie pn–pt: każdy dostaje po 1 trasie (dobór pod godziny)
+ * 3. Bilans godzin kierowca po kierowcy (na pustych dniach)
+ * 4. Wypełnienie obowiązkowych tras + finalizacja (każdy ma min. 1 trasę)
+ * 5. Łączenie: zostałe trasy dokładamy osobom z nienakładającymi się godzinami
+ * 6. Wyrównanie godzin (zamiany w obrębie dnia)
+ * 7. DW5 (jeden na tydzień po sobocie)
  */
 function generateAutoFillAssignments({ employees, routes, schedules, month, year, user_id }) {
   const workingSchedules = schedules.map((s) => ({ ...s }));
@@ -782,6 +955,7 @@ function generateAutoFillAssignments({ employees, routes, schedules, month, year
     user_id,
   };
 
+  // Faza 1 — pokrycie: każdy pracownik dostaje po 1 trasie (lub ma label)
   fillWeekdaysByDay(ctx);
 
   for (const employee of ctx.employees) {
@@ -790,6 +964,11 @@ function generateAutoFillAssignments({ employees, routes, schedules, month, year
 
   fillRemainingMandatorySlots(ctx);
   finalizeDriverRouteMatching(ctx);
+
+  // Faza 2 — łączenie: dopiero gdy każdy ma swoją trasę, dokładamy zostałe trasy
+  // osobom, którym godziny się nie pokrywają
+  combineLeftoverRoutes(ctx);
+
   rebalanceHoursOnWeekdays(ctx);
 
   const extraLabels = generateDw5Proposals(
@@ -798,7 +977,15 @@ function generateAutoFillAssignments({ employees, routes, schedules, month, year
     routes,
     ctx.employees.length
   );
-  const labelAssignments = [...ctx.labelAssignments, ...extraLabels];
+
+  // Dedup etykiet po (pracownik|data|label) — DW5 maks. raz na dzień/tydzień
+  const seenLabels = new Set();
+  const labelAssignments = [...ctx.labelAssignments, ...extraLabels].filter((l) => {
+    const key = `${l.employee_id}|${l.date}|${l.label}`;
+    if (seenLabels.has(key)) return false;
+    seenLabels.add(key);
+    return true;
+  });
 
   return { routeAssignments: ctx.assignments, labelAssignments };
 }

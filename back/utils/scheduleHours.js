@@ -15,16 +15,47 @@ const parseWorkingHours = (wh) => {
   }
 };
 
-const getRouteDurationHours = (route) => {
-  const wh = parseWorkingHours(route?.working_hours);
-  if (!wh || !Array.isArray(wh.segments)) return 0;
+const toMinutes = (hhmm) => {
+  if (!hhmm || typeof hhmm !== 'string') return null;
+  const [h, m] = hhmm.split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+};
 
-  let totalMinutes = 0;
-  wh.segments.forEach((seg) => {
-    const [startH, startM] = seg.start.split(':').map(Number);
-    const [endH, endM] = seg.end.split(':').map(Number);
-    totalMinutes += endH * 60 + endM - (startH * 60 + startM);
-  });
+/** Przedziały czasowe trasy w minutach: [{ start, end }] (obsługuje przejście przez północ). */
+const getRouteTimeSegments = (route) => {
+  const wh = parseWorkingHours(route?.working_hours);
+  if (!wh || !Array.isArray(wh.segments)) return [];
+
+  const segments = [];
+  for (const seg of wh.segments) {
+    const start = toMinutes(seg.start);
+    let end = toMinutes(seg.end);
+    if (start == null || end == null) continue;
+    if (end < start) end += 24 * 60; // trasa przez północ
+    segments.push({ start, end });
+  }
+  return segments;
+};
+
+const segmentsOverlap = (a, b) => a.start < b.end && b.start < a.end;
+
+/** Czy dwie trasy nakładają się czasowo (nie można ich połączyć u jednego kierowcy). */
+const routesTimeOverlap = (routeA, routeB) => {
+  const segsA = getRouteTimeSegments(routeA);
+  const segsB = getRouteTimeSegments(routeB);
+  for (const sa of segsA) {
+    for (const sb of segsB) {
+      if (segmentsOverlap(sa, sb)) return true;
+    }
+  }
+  return false;
+};
+
+const getRouteDurationHours = (route) => {
+  const segments = getRouteTimeSegments(route);
+  if (segments.length === 0) return 0;
+  const totalMinutes = segments.reduce((sum, s) => sum + (s.end - s.start), 0);
   return totalMinutes / 60;
 };
 
@@ -76,6 +107,8 @@ const wouldExceedTargetHours = (employee, route, schedules, routes, month, year,
 
 module.exports = {
   getRouteDurationHours,
+  getRouteTimeSegments,
+  routesTimeOverlap,
   getTargetMonthHours,
   getEmployeeMonthHours,
   getHoursRatio,

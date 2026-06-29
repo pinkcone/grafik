@@ -33,7 +33,7 @@ const findPairRoute = (route, allRoutes = []) => {
 };
 
 const getAssignmentBlockReason = (employee, route, options = {}) => {
-  const { pairedRoute = null, date = null, schedules = null, allRoutes = [], employeeCount = 0, initialEmployeeDays = null } = options;
+  const { pairedRoute = null, date = null, schedules = null, allRoutes = [], employeeCount = 0, initialEmployeeDays = null, skipSlotCheck = false } = options;
 
   if (!employee || !route) {
     return 'Brak danych pracownika lub trasy.';
@@ -43,7 +43,7 @@ const getAssignmentBlockReason = (employee, route, options = {}) => {
     return 'Pracownik ma wpisaną etykietę tego dnia — nie można przypisać trasy.';
   }
 
-  if (date && schedules && allRoutes.length > 0) {
+  if (!skipSlotCheck && date && schedules && allRoutes.length > 0) {
     const canTake =
       canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, schedules, allRoutes) ||
       canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, schedules, allRoutes, {
