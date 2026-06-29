@@ -346,14 +346,32 @@ const isWeekday = (date) => {
 const listWeekdaysInMonth = (month, year) =>
   listMonthDates(month, year).filter(isWeekday);
 
+const countEmployeeFreeWeekdays = (employeeId, ctx) =>
+  listWeekdaysInMonth(ctx.month, ctx.year).filter((date) =>
+    isEmployeeDayFreeForRoute(employeeId, date, ctx)
+  ).length;
+
+/** Ile godzin „na dzień” zostało do rozłożenia (uwzględnia puste dni robocze). */
+const getIdealRouteHoursForEmployee = (employee, ctx, daysRemaining = null) => {
+  const gap = getHourGap(employee, ctx);
+  const freeDays =
+    daysRemaining != null
+      ? daysRemaining
+      : countEmployeeFreeWeekdays(employee.id, ctx);
+  if (freeDays <= 0) return Math.max(0, gap);
+  return gap / freeDays;
+};
+
 const scoreForGap = (gap, blockHours) => {
   const after = gap - blockHours;
   return Math.abs(after);
 };
 
-const scoreRouteForEmployeeHours = (employee, route, ctx) => {
+const scoreRouteForEmployeeHours = (employee, route, ctx, options = {}) => {
+  const { daysRemaining = null, forceCoverage = false } = options;
   const gap = getHourGap(employee, ctx);
   const blockHours = getRouteBlockHours(route, ctx.routes);
+  const after = gap - blockHours;
   const mandatoryBonus = routeRequiresStaffing(route) ? -0.5 : 0;
   const wastePenalty =
     Math.max(
@@ -361,11 +379,27 @@ const scoreRouteForEmployeeHours = (employee, route, ctx) => {
       getEmployeeCapabilityTier(employee) -
         getRouteRestrictionTierWithPair(route, ctx.routes)
     ) * 0.35;
-  return scoreForGap(gap, blockHours) + mandatoryBonus + wastePenalty;
+
+  // Pokrycie pn-pt: gdy brakuje trasy w dniu, weź najkrótszą możliwą (nawet nad etatem).
+  if (forceCoverage) {
+    return blockHours + wastePenalty + mandatoryBonus;
+  }
+
+  let score = scoreForGap(gap, blockHours);
+
+  const ideal = getIdealRouteHoursForEmployee(employee, ctx, daysRemaining);
+  score += Math.abs(blockHours - ideal) * 0.85;
+
+  // Nad etatem — mocniej faworyzuj krótsze trasy, żeby nie zostawiać pustych dni.
+  if (after < 0) {
+    score += Math.abs(after) * 2 + blockHours * 0.4;
+  }
+
+  return score + mandatoryBonus + wastePenalty;
 };
 
 /** Najlepsza pusta trasa na dany dzień — dopasowana do godzin (krótsza gdy nad etatem, dłuższa gdy brakuje). */
-const findBestRouteForEmployeeOnDay = (employee, date, ctx) => {
+const findBestRouteForEmployeeOnDay = (employee, date, ctx, options = {}) => {
   let best = null;
 
   for (const route of ctx.routes) {
@@ -384,7 +418,7 @@ const findBestRouteForEmployeeOnDay = (employee, date, ctx) => {
       continue;
     }
 
-    const score = scoreRouteForEmployeeHours(employee, route, ctx);
+    const score = scoreRouteForEmployeeHours(employee, route, ctx, options);
     if (!best || score < best.score) {
       best = { route, score };
     }
@@ -494,12 +528,44 @@ const findBestSwapForEmployee = (employee, ctx) => {
   return best;
 };
 
-/** pn–pt: w każdym dniu rozdaj trasy po kolei (B → C → SP), dobór pod godziny. */
+/** pn–pt: w każdym dniu rozdaj trasy — najpierw ci, którzy są najbardziej „w tyle” z godzinami. */
 const fillWeekdaysByDay = (ctx) => {
-  for (const date of listWeekdaysInMonth(ctx.month, ctx.year)) {
-    for (const emp of sortEmployeesForFillOrder(ctx.employees)) {
+  const weekdays = listWeekdaysInMonth(ctx.month, ctx.year);
+
+  for (let i = 0; i < weekdays.length; i++) {
+    const date = weekdays[i];
+    const daysRemaining = weekdays.length - i;
+    const progress = (i + 1) / weekdays.length;
+
+    const ordered = [...ctx.employees].sort((a, b) => {
+      const targetA = getTargetMonthHours(a, ctx.month, ctx.year);
+      const targetB = getTargetMonthHours(b, ctx.month, ctx.year);
+      const currentA = getEmployeeMonthHours(
+        a.id,
+        ctx.workingSchedules,
+        ctx.routes,
+        ctx.month,
+        ctx.year
+      );
+      const currentB = getEmployeeMonthHours(
+        b.id,
+        ctx.workingSchedules,
+        ctx.routes,
+        ctx.month,
+        ctx.year
+      );
+      const deficitA = targetA * progress - currentA;
+      const deficitB = targetB * progress - currentB;
+      return (
+        deficitB - deficitA ||
+        getEmployeeFillOrderRank(a) - getEmployeeFillOrderRank(b) ||
+        a.id - b.id
+      );
+    });
+
+    for (const emp of ordered) {
       if (!isEmployeeDayFreeForRoute(emp.id, date, ctx)) continue;
-      const route = findBestRouteForEmployeeOnDay(emp, date, ctx);
+      const route = findBestRouteForEmployeeOnDay(emp, date, ctx, { daysRemaining });
       if (route) assignRouteToEmployee(emp, route, date, ctx);
     }
   }
@@ -532,8 +598,113 @@ const balanceEmployeeMonth = (employee, ctx) => {
       break;
     }
 
-    // Nad etatem: nie usuwamy tras — krótsze trasy wybierane są przy kolejnych dniach / zamianach.
+    // Nad etatem: zamień długą trasę z kimś, kto ma deficyt godzin (ten sam dzień).
+    if (tryRelieveOverTargetEmployee(employee, ctx)) {
+      continue;
+    }
+
     break;
+  }
+};
+
+/**
+ * Kierowca nad etatem oddaje dłuższą trasę osobie z deficytem — ta sama data, inna długość.
+ */
+const tryRelieveOverTargetEmployee = (employee, ctx) => {
+  const prefix = `${ctx.year}-${String(ctx.month).padStart(2, '0')}`;
+  const myEntries = ctx.workingSchedules
+    .filter(
+      (s) =>
+        s.employee_id?.toString() === employee.id.toString() &&
+        s.route_id &&
+        s.date?.startsWith(prefix) &&
+        isRouteSlotSwappable(s.date, s.route_id, ctx.initialRouteSlots)
+    )
+    .map((s) => ({
+      date: s.date,
+      route: ctx.routes.find((r) => r.id.toString() === s.route_id.toString()),
+    }))
+    .filter((e) => e.route)
+    .sort(
+      (a, b) =>
+        getRouteBlockHours(b.route, ctx.routes) - getRouteBlockHours(a.route, ctx.routes)
+    );
+
+  for (const { date, route: myRoute } of myEntries) {
+    const dayEntries = ctx.workingSchedules.filter(
+      (s) =>
+        s.date === date &&
+        s.route_id &&
+        s.employee_id?.toString() !== employee.id.toString() &&
+        isRouteSlotSwappable(date, s.route_id, ctx.initialRouteSlots)
+    );
+
+    for (const entry of dayEntries) {
+      const other = ctx.employees.find(
+        (e) => e.id.toString() === entry.employee_id?.toString()
+      );
+      const otherRoute = ctx.routes.find(
+        (r) => r.id.toString() === entry.route_id?.toString()
+      );
+      if (!other || !otherRoute) continue;
+      if (getHourGap(other, ctx) <= 0) continue;
+
+      const myHours = getRouteBlockHours(myRoute, ctx.routes);
+      const otherHours = getRouteBlockHours(otherRoute, ctx.routes);
+      if (myHours <= otherHours) continue;
+
+      if (
+        !canEmployeeTakeRouteOnDay(
+          other,
+          myRoute,
+          ctx.routes,
+          date,
+          ctx.workingSchedules,
+          ctx.month,
+          ctx.year,
+          routeCheckOptions(ctx)
+        )
+      ) {
+        continue;
+      }
+      if (
+        !canEmployeeTakeRouteOnDay(
+          employee,
+          otherRoute,
+          ctx.routes,
+          date,
+          ctx.workingSchedules,
+          ctx.month,
+          ctx.year,
+          routeCheckOptions(ctx)
+        )
+      ) {
+        continue;
+      }
+
+      if (
+        trySwapRoutesBetweenEmployees(date, employee, other, myRoute, otherRoute, ctx)
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
+/**
+ * Każdy pn-pt musi mieć trasę lub label — bierzemy najkrótszą pasującą trasę.
+ */
+const ensureWeekdayCoverage = (ctx) => {
+  for (const date of listWeekdaysInMonth(ctx.month, ctx.year)) {
+    const freeEmployees = sortFreeEmployeesForCoverage(ctx.employees, date, ctx);
+
+    for (const emp of freeEmployees) {
+      if (!isEmployeeDayFreeForRoute(emp.id, date, ctx)) continue;
+      const route = findBestRouteForEmployeeOnDay(emp, date, ctx, { forceCoverage: true });
+      if (route) assignRouteToEmployee(emp, route, date, ctx);
+    }
   }
 };
 
@@ -688,7 +859,8 @@ const finalizeDriverRouteMatching = (ctx) => {
   }
 };
 
-const trySwapRoutesBetweenEmployees = (date, empA, empB, routeA, routeB, ctx) => {
+const trySwapRoutesBetweenEmployees = (date, empA, empB, routeA, routeB, ctx, options = {}) => {
+  const { allowWorse = false } = options;
   if (!empA || !empB || !routeA || !routeB) return false;
   if (empA.id.toString() === empB.id.toString()) return false;
   if (routeA.id.toString() === routeB.id.toString()) return false;
@@ -719,7 +891,7 @@ const trySwapRoutesBetweenEmployees = (date, empA, empB, routeA, routeB, ctx) =>
   }
 
   const gapAfter = Math.abs(getHourGap(empA, ctx)) + Math.abs(getHourGap(empB, ctx));
-  if (gapAfter >= gapBefore) {
+  if (!allowWorse && gapAfter >= gapBefore) {
     ctx.workingSchedules = backup.workingSchedules;
     ctx.assignments = backup.assignments;
     ctx.labelAssignments = backup.labelAssignments;
@@ -964,12 +1136,14 @@ function generateAutoFillAssignments({ employees, routes, schedules, month, year
 
   fillRemainingMandatorySlots(ctx);
   finalizeDriverRouteMatching(ctx);
+  ensureWeekdayCoverage(ctx);
 
   // Faza 2 — łączenie: dopiero gdy każdy ma swoją trasę, dokładamy zostałe trasy
   // osobom, którym godziny się nie pokrywają
   combineLeftoverRoutes(ctx);
 
   rebalanceHoursOnWeekdays(ctx);
+  ensureWeekdayCoverage(ctx);
 
   const extraLabels = generateDw5Proposals(
     ctx.workingSchedules,

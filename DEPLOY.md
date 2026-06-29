@@ -139,3 +139,13 @@ cd /var/www/grafik && bash scripts/deploy.sh
 - Baza MySQL **nie jest** nadpisywana przy deployu — zmienia się tylko kod.
 - Plik `back/.env` zostaje na serwerze i nie trafia do gita (jest w `.gitignore`).
 - Frontend w produkcji korzysta z `/api/...` przez nginx — nie trzeba `REACT_APP_BACKEND_URL`, jeśli nginx jest skonfigurowany jak w przykładzie.
+
+## Eksport danych grafiku (CSV)
+
+Na stronie grafiku (widok miasta) przycisk **„Eksport do CSV”** pobiera plik z bieżącego miesiąca:
+
+- jeden wiersz = jeden wpis w grafiku (trasa lub etykieta),
+- kolumny: data, pracownik, trasa, godziny, etykieta, czy auto-uzupełnione itd.,
+- separator `;` (otwiera się poprawnie w Excelu PL).
+
+Żeby przekazać kilka miesięcy — przełącz miesiąc strzałkami i pobierz CSV dla każdego.

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { decorateWorksheet } from './elements/decorateWorksheet';
+import { downloadCsv } from '../utils/csvExport';
 import { canAssignEmployeeToRouteWithPair, getAssignmentBlockReason, findPairRoute, sortRoutesByAssignmentPriority } from '../utils/routeAssignment';
 import { hasEmployeeLabelOnDay } from '../utils/scheduleLabels';
 import { getEmployeeRouteSlotCountOnDay, canEmployeeHaveAnotherRouteOnDay } from '../utils/scheduleConstraints';
@@ -677,6 +678,59 @@ const handleExportXLSX = () => {
   saveAs(new Blob([wbout]), "grafik.xlsx");
 };
 
+const WEEKDAY_SHORT = ['Nd', 'Pn', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob'];
+
+const handleExportCSV = () => {
+  const header = [
+    'data',
+    'dzien',
+    'dzien_tygodnia',
+    'pracownik_id',
+    'pracownik',
+    'etat',
+    'trasa_id',
+    'trasa',
+    'godziny_trasy',
+    'etykieta',
+    'auto_uzupelnione',
+  ];
+
+  const rows = schedules
+    .slice()
+    .sort(
+      (a, b) =>
+        a.date.localeCompare(b.date) ||
+        String(a.employee_id).localeCompare(String(b.employee_id))
+    )
+    .map((s) => {
+      const emp = employees.find(
+        (e) => e.id?.toString() === s.employee_id?.toString()
+      );
+      const route = s.route_id
+        ? routes.find((r) => r.id.toString() === s.route_id.toString())
+        : null;
+      const dayNum = parseInt(s.date.split('-')[2], 10);
+      const dow = WEEKDAY_SHORT[new Date(`${s.date}T12:00:00`).getDay()];
+
+      return [
+        s.date,
+        dayNum,
+        dow,
+        s.employee_id ?? '',
+        emp ? `${emp.last_name} ${emp.first_name}` : '',
+        emp?.part_time ?? '',
+        s.route_id ?? '',
+        route?.name ?? '',
+        route ? calculateDuration(route).toFixed(2) : '',
+        s.label ?? '',
+        s.auto_filled === true || s.auto_filled === 1 ? 'tak' : 'nie',
+      ];
+    });
+
+  const filename = `grafik-${year}-${String(month).padStart(2, '0')}-miasto${cityId}.csv`;
+  downloadCsv(filename, [header, ...rows]);
+};
+
   const handleClearMonth = async () => {
     const prefix = `${year}-${String(month).padStart(2, '0')}`;
     const routeCount = schedules.filter(
@@ -1042,6 +1096,7 @@ const prepareRoutesSheet = () => {
 
       <div className="schedule-toolbar">
         <button type="button" onClick={handleExportXLSX}>Eksport do XLSX</button>
+        <button type="button" onClick={handleExportCSV}>Eksport do CSV</button>
         <button type="button" className="btn-primary" onClick={handleAutoFillRoutes}>
           Uzupełnij trasy
         </button>
