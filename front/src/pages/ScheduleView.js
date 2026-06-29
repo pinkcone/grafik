@@ -679,13 +679,15 @@ const handleExportXLSX = () => {
 
   const handleClearMonth = async () => {
     const prefix = `${year}-${String(month).padStart(2, '0')}`;
-    const routeCount = schedules.filter((s) => s.date.startsWith(prefix) && s.route_id).length;
+    const routeCount = schedules.filter(
+      (s) => s.date.startsWith(prefix) && s.route_id && (s.auto_filled === true || s.auto_filled === 1)
+    ).length;
 
     const ok = window.confirm(
-      `Wyczyścić trasy za ${month}.${year}?\n` +
+      `Wyczyścić trasy z auto-uzupełniania za ${month}.${year}?\n` +
       (routeCount > 0
-        ? `Usunie ${routeCount} przypisań tras. Etykiety (urlopy, DW itd.) zostaną.`
-        : 'Brak tras do usunięcia w tym miesiącu.')
+        ? `Usunie ${routeCount} tras dodanych przez „Uzupełnij trasy”. Ręczne wpisy i etykiety zostaną.`
+        : 'Brak tras z auto-uzupełniania do usunięcia w tym miesiącu.')
     );
     if (!ok) return;
 

@@ -35,6 +35,12 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       allowNull: false,
     },
+    auto_filled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: 'true = wpis z auto-uzupełniania tras (Uzupełnij trasy)',
+    },
   }, {
     tableName: 'schedule',
     timestamps: false,

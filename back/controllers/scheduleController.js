@@ -31,7 +31,7 @@ const addDaysToDate = (dateStr, days) => {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 };
 
-const persistRouteProposals = async (proposals, user_id) => {
+const persistRouteProposals = async (proposals, user_id, { autoFilled = false } = {}) => {
   const created = [];
   const routesCache = new Map();
   const dayStateCache = new Map();
@@ -91,6 +91,7 @@ const persistRouteProposals = async (proposals, user_id) => {
       label: null,
       assignment_type: 'route',
       user_id: item.user_id || user_id,
+      auto_filled: autoFilled,
     });
     const rowJson = row.toJSON ? row.toJSON() : row;
     daySchedules.push(rowJson);
@@ -99,7 +100,7 @@ const persistRouteProposals = async (proposals, user_id) => {
   return created;
 };
 
-const persistLabelProposals = async (proposals, user_id) => {
+const persistLabelProposals = async (proposals, user_id, { autoFilled = false } = {}) => {
   const created = [];
   for (const item of proposals) {
     const existing = await Schedule.findOne({
@@ -114,6 +115,7 @@ const persistLabelProposals = async (proposals, user_id) => {
         route_id: null,
         assignment_type: 'label',
         user_id: item.user_id || user_id,
+        auto_filled: autoFilled,
       });
       created.push(existing);
     } else {
@@ -124,6 +126,7 @@ const persistLabelProposals = async (proposals, user_id) => {
         label: item.label,
         assignment_type: 'label',
         user_id: item.user_id || user_id,
+        auto_filled: autoFilled,
       });
       created.push(row);
     }
@@ -253,9 +256,24 @@ exports.updateScheduleCell = async (req, res) => {
     let schedule = await Schedule.findOne({ where });
 
     if (schedule) {
-      await schedule.update({ route_id: route_id ?? null, label: label ?? null, assignment_type, employee_id, user_id });
+      await schedule.update({
+        route_id: route_id ?? null,
+        label: label ?? null,
+        assignment_type,
+        employee_id,
+        user_id,
+        auto_filled: false,
+      });
     } else {
-      schedule = await Schedule.create({ date, employee_id, route_id: route_id ?? null, label: label ?? null, assignment_type, user_id });
+      schedule = await Schedule.create({
+        date,
+        employee_id,
+        route_id: route_id ?? null,
+        label: label ?? null,
+        assignment_type,
+        user_id,
+        auto_filled: false,
+      });
     }
 
     if (saturdayDw5Package) {
@@ -380,8 +398,8 @@ exports.autoFillRoutes = async (req, res) => {
       });
     }
 
-    const created = await persistRouteProposals(routeAssignments, user_id);
-    const labelsCreated = await persistLabelProposals(labelAssignments, user_id);
+    const created = await persistRouteProposals(routeAssignments, user_id, { autoFilled: true });
+    const labelsCreated = await persistLabelProposals(labelAssignments, user_id, { autoFilled: true });
 
     return res.json({
       message: `Uzupełniono ${created.length} przypisań tras` +
@@ -402,7 +420,7 @@ exports.autoFillRoutes = async (req, res) => {
 
 /**
  * DELETE /api/schedule/city/:cityId/month?month=MM&year=YYYY
- * Usuwa przypisania tras (nie etykiety) pracowników danego miasta w wybranym miesiącu.
+ * Usuwa trasy dodane przez „Uzupełnij trasy” (auto_filled). Ręczne wpisy zostają.
  */
 exports.clearMonth = async (req, res) => {
   const { cityId } = req.params;
@@ -433,13 +451,14 @@ exports.clearMonth = async (req, res) => {
         employee_id: { [Op.in]: employeeIds },
         date: { [Op.between]: [startDate, endDate] },
         route_id: { [Op.ne]: null },
+        auto_filled: true,
       },
     });
 
     return res.json({
       message: deleted > 0
-        ? `Usunięto ${deleted} przypisań tras za ${monthNum}.${yearNum}. Etykiety pozostały bez zmian.`
-        : `Brak tras do usunięcia za ${monthNum}.${yearNum}.`,
+        ? `Usunięto ${deleted} tras z auto-uzupełniania za ${monthNum}.${yearNum}. Ręczne wpisy i etykiety pozostały.`
+        : `Brak tras z auto-uzupełniania do usunięcia za ${monthNum}.${yearNum}.`,
       deleted,
     });
   } catch (error) {
