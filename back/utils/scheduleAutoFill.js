@@ -53,6 +53,18 @@ const buildDate = (year, month, day) =>
 const employeeDayKey = (date, employeeId) => `${date}|${employeeId}`;
 const routeSlotKey = (date, routeId) => `${date}|${routeId}`;
 
+/**
+ * Zamienia wiersz grafiku na czysty obiekt. Instancje Sequelize przechowują dane
+ * w dataValues (gettery na prototypie), więc {...instancja} gubi date/route_id/employee_id.
+ * Bez tego algorytm „nie widzi” istniejących wpisów i proponuje na zajęte sloty.
+ */
+const toPlainSchedule = (s) => {
+  if (!s) return s;
+  if (typeof s.get === 'function') return s.get({ plain: true });
+  if (typeof s.toJSON === 'function') return s.toJSON();
+  return { ...s };
+};
+
 /** Przesuwa datę 'YYYY-MM-DD' o `days` dni (kalendarzowo). */
 const shiftDateStr = (dateStr, days) => {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -642,8 +654,13 @@ const collectNewRouteProposals = (workingSchedules, baselineSchedules, user_id) 
     }
   }
 
-  const proposals = [];
+  // Sloty tras zajęte już w baseline — nie proponujemy na nie nikogo nowego.
   const seenRouteSlot = new Set();
+  for (const s of baselineSchedules) {
+    if (s.date && s.route_id) seenRouteSlot.add(`${s.date}|${s.route_id.toString()}`);
+  }
+
+  const proposals = [];
 
   for (const s of workingSchedules) {
     if (!s.date || !s.route_id || !s.employee_id) continue;
@@ -2222,7 +2239,9 @@ function generateAutoFillAssignments({
   year,
   user_id,
 }) {
-  const baselineSchedules = schedules.map((s) => ({ ...s }));
+  // Normalizacja: wejście może być instancjami Sequelize — spread {...instancja} gubi
+  // pola (date/route_id/employee_id), więc trzeba je wyciągnąć przez get/toJSON.
+  const baselineSchedules = schedules.map(toPlainSchedule);
   const workingSchedules = baselineSchedules.map((s) => ({ ...s }));
   const { initialEmployeeDays, initialRouteSlots } = buildInitialSnapshot(baselineSchedules);
 
@@ -2231,7 +2250,7 @@ function generateAutoFillAssignments({
     routes,
     workingSchedules,
     persistSim: baselineSchedules.map((s) => ({ ...s })),
-    quarterSchedules: quarterSchedules.map((s) => ({ ...s })),
+    quarterSchedules: quarterSchedules.map(toPlainSchedule),
     assignments: [],
     labelAssignments: [],
     initialEmployeeDays,

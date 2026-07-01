@@ -12,7 +12,7 @@ const { isSaturday } = require('../utils/scheduleRules');
 
 // Podbijaj przy każdej istotnej zmianie algorytmu — dzięki temu w logu widać,
 // że działa świeża wersja, a nie zbuforowany stary run.
-const AUTOFILL_ALGORITHM_VERSION = 'v2026.07.01-tygodniowa-rotacja+dw5-fallback';
+const AUTOFILL_ALGORITHM_VERSION = 'v2026.07.01b-fix-baseline-sequelize+rotacja+dw5';
 
 const parseWorkingHours = (wh) => {
   if (!wh) return null;
@@ -85,13 +85,14 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
     .filter(hasMeaningfulAssignment);
 
   const baselineSchedules = citySchedules.map(toSchedulePlain);
+  const quarterSchedulesPlain = quarterSchedules.map(toSchedulePlain);
 
   const { routeAssignments, labelAssignments, debug: algorithmDebug } =
     generateAutoFillAssignments({
       employees,
       routes: activeRoutes,
-      schedules: citySchedules,
-      quarterSchedules,
+      schedules: baselineSchedules,
+      quarterSchedules: quarterSchedulesPlain,
       month: monthNum,
       year: yearNum,
       user_id,
