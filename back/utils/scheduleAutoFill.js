@@ -932,6 +932,148 @@ const ensureWeekdayCoverage = (ctx) => {
   }
 };
 
+/** Czy pracownik nie ma nic w danym dniu (brak trasy i etykiety), a dzień jest edytowalny. */
+const isEmployeeWeekdayEmpty = (employeeId, date, ctx) => {
+  if (!isEmployeeDayMutable(employeeId, date, ctx.initialEmployeeDays)) return false;
+  if (hasEmployeeLabelOnDay(employeeId, date, ctx.workingSchedules)) return false;
+  return (
+    getEmployeeRouteSlotCountOnDay(employeeId, date, ctx.workingSchedules, ctx.routes) === 0
+  );
+};
+
+/**
+ * Próba obsadzenia pustego dnia: pusta trasa → dowolna pasująca → zajęta (zamiana).
+ */
+const tryFillEmptyDayForEmployee = (employee, date, ctx) => {
+  if (!isEmployeeWeekdayEmpty(employee.id, date, ctx)) return false;
+
+  const route = findBestRouteForEmployeeOnDay(employee, date, ctx, { forceCoverage: true });
+  if (route && assignRouteToEmployee(employee, route, date, ctx)) {
+    return true;
+  }
+
+  const openRoutes = sortOpenRoutesForFill(ctx.routes, date, ctx)
+    .map((r) => ({
+      route: r,
+      score: scoreRouteForEmployeeHours(employee, r, ctx, { forceCoverage: true, date }),
+    }))
+    .sort((a, b) => a.score - b.score);
+
+  for (const { route: r } of openRoutes) {
+    if (assignRouteToEmployee(employee, r, date, ctx)) {
+      return true;
+    }
+  }
+
+  const swappableEntries = ctx.workingSchedules
+    .filter(
+      (s) =>
+        s.date === date &&
+        s.route_id &&
+        isRouteSlotSwappable(date, s.route_id, ctx.initialRouteSlots)
+    )
+    .map((s) => ({
+      route: ctx.routes.find((r) => r.id.toString() === s.route_id.toString()),
+      otherId: s.employee_id,
+    }))
+    .filter((e) => e.route && e.otherId?.toString() !== employee.id.toString());
+
+  for (const { route: takenRoute, otherId } of swappableEntries) {
+    const other = ctx.employees.find((e) => e.id.toString() === otherId.toString());
+    if (!other) continue;
+
+    if (
+      !canEmployeeTakeRouteOnDay(
+        employee,
+        takenRoute,
+        ctx.routes,
+        date,
+        ctx.workingSchedules,
+        ctx.month,
+        ctx.year,
+        routeCheckOptions(ctx)
+      )
+    ) {
+      continue;
+    }
+
+    const backup = {
+      workingSchedules: ctx.workingSchedules.map((s) => ({ ...s })),
+      assignments: ctx.assignments.map((a) => ({ ...a })),
+      labelAssignments: ctx.labelAssignments.map((l) => ({ ...l })),
+    };
+
+    removeRouteSlot(date, takenRoute.id, ctx);
+    if (!assignRouteToEmployee(employee, takenRoute, date, ctx)) {
+      ctx.workingSchedules = backup.workingSchedules;
+      ctx.assignments = backup.assignments;
+      ctx.labelAssignments = backup.labelAssignments;
+      continue;
+    }
+
+    const otherRoute = findBestRouteForEmployeeOnDay(other, date, ctx, { forceCoverage: true });
+    if (otherRoute) {
+      assignRouteToEmployee(other, otherRoute, date, ctx);
+    }
+
+    return true;
+  }
+
+  for (const r of sortOpenRoutesForFill(ctx.routes, date, ctx)) {
+    if (findRouteAssignment(date, r.id, ctx.workingSchedules)) {
+      if (tryCapabilitySwapForRoute(r, date, ctx) && !isEmployeeWeekdayEmpty(employee.id, date, ctx)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
+/**
+ * Ostatnie przejście: pusty dzień pracownika + dostępna trasa → przypisz (pętla do skutku).
+ */
+const fillRemainingEmptyEmployeeDays = (ctx) => {
+  let changed = true;
+  let guard = 0;
+
+  while (changed && guard < 500) {
+    changed = false;
+    guard += 1;
+
+    for (const date of listWeekdaysInMonth(ctx.month, ctx.year)) {
+      const emptyEmployees = ctx.employees
+        .filter((e) => isEmployeeWeekdayEmpty(e.id, date, ctx))
+        .sort(
+          (a, b) =>
+            countEmployeeRouteDaysInMonth(a.id, ctx) -
+              countEmployeeRouteDaysInMonth(b.id, ctx) ||
+            getQuarterHourGap(b, ctx) - getQuarterHourGap(a, ctx) ||
+            getEmployeePartTime(a) - getEmployeePartTime(b) ||
+            a.id - b.id
+        );
+
+      for (const emp of emptyEmployees) {
+        if (tryFillEmptyDayForEmployee(emp, date, ctx)) {
+          changed = true;
+        }
+      }
+
+      const stillOpen = sortOpenRoutesForFill(ctx.routes, date, ctx);
+      for (const route of stillOpen) {
+        if (findRouteAssignment(date, route.id, ctx.workingSchedules)) continue;
+
+        const emp = findBestEmployeeForRouteOnDay(route, date, ctx, { forceCoverage: true });
+        if (emp && assignRouteToEmployee(emp, route, date, ctx)) {
+          changed = true;
+        } else if (tryCapabilitySwapForRoute(route, date, ctx)) {
+          changed = true;
+        }
+      }
+    }
+  }
+};
+
 /**
  * Zamiana wg uprawnień: trasa wymagająca uprawnień została pusta, a wolni pracownicy
  * jej nie wezmą. Jeśli ktoś z uprawnieniami jeździ tego dnia trasę, która ich NIE
@@ -1348,7 +1490,8 @@ const combineLeftoverRoutes = (ctx) => {
  * 4. Wypełnienie wszystkich tras kursujących w dniu + finalizacja (każdy ma min. 1 trasę)
  * 5. Łączenie: zostałe trasy dokładamy osobom z nienakładającymi się godzinami
  * 6. Wyrównanie godzin (zamiany w obrębie dnia)
- * 7. DW5 (jeden na tydzień po sobocie)
+ * 7. Ostatnie przejście — puste dni pracowników + wolne trasy
+ * 8. DW5 (jeden na tydzień po sobocie)
  *
  * Godziny: dobór tras pod miesiąc ORAZ kwartał kalendarzowy (I–III, IV–VI…);
  * nie pomijamy dni — wybieramy odpowiednią długość; mniejszy etat → krótsze trasy;
@@ -1397,6 +1540,7 @@ function generateAutoFillAssignments({
   rebalanceHoursOnWeekdays(ctx);
   ensureWeekdayCoverage(ctx);
   fillAllOperatingRouteSlots(ctx);
+  fillRemainingEmptyEmployeeDays(ctx);
 
   const extraLabels = generateDw5Proposals(
     ctx.workingSchedules,
