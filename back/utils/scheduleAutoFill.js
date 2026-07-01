@@ -6,6 +6,7 @@ const {
   getEmployeeCapabilityTier,
   getRouteRestrictionTierWithPair,
   hasSpecialPermissions,
+  sortRoutesByAssignmentPriority,
 } = require('./routeAssignment');
 const { isRouteOperatingOnDate, getIsoWeekday } = require('./routeOperatingDays');
 const {
@@ -15,6 +16,7 @@ const {
   hasDw5AfterSaturday,
   getDw5CandidateWeekdays,
   DW5_LABEL_CODE,
+  getSaturdayDw5BlockReason,
 } = require('./scheduleRules');
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 const {
@@ -41,6 +43,10 @@ const buildDate = (year, month, day) =>
 const employeeDayKey = (date, employeeId) => `${date}|${employeeId}`;
 const routeSlotKey = (date, routeId) => `${date}|${routeId}`;
 
+/** Wpis z trasą lub etykietą — puste placeholdery (assignment_type none) nie blokują auto-fill. */
+const hasMeaningfulAssignment = (s) =>
+  s.route_id != null || (s.label != null && String(s.label).trim() !== '');
+
 const findRouteAssignment = (date, routeId, schedules) =>
   schedules.find((s) => s.date === date && s.route_id?.toString() === routeId.toString());
 
@@ -50,7 +56,7 @@ const buildInitialSnapshot = (schedules) => {
   const initialRouteSlots = new Set();
 
   for (const s of schedules) {
-    if (s.employee_id != null && s.date) {
+    if (s.employee_id != null && s.date && hasMeaningfulAssignment(s)) {
       initialEmployeeDays.add(employeeDayKey(s.date, s.employee_id));
     }
     if (s.route_id != null && s.date) {
@@ -137,6 +143,7 @@ const sortEmployeesForFillOrder = (employees) =>
       getEmployeeFillOrderRank(a) - getEmployeeFillOrderRank(b) || a.id - b.id
   );
 
+/** Te same reguły co dropdown w widoku pracowników (+ DW5 w sobotę dla auto-fill). */
 const canEmployeeTakeRouteOnDay = (
   employee,
   route,
@@ -147,25 +154,32 @@ const canEmployeeTakeRouteOnDay = (
   year,
   options = {}
 ) => {
-  if (!employee || !route) return false;
+  if (!employee || !route || !date) return false;
   if (hasEmployeeLabelOnDay(employee.id, date, schedules)) return false;
-  if (!canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, schedules, routes)) {
+
+  const taken = findRouteAssignment(date, route.id, schedules);
+  if (taken && taken.employee_id?.toString() !== employee.id.toString()) {
     return false;
   }
+
   if (!canAssignEmployeeToRouteWithPair(employee, route, routes, date, schedules)) {
     return false;
   }
 
-  const routeOptions = {
-    pairedRoute: findPairRoute(route, routes),
-    date,
-    schedules,
-    allRoutes: routes,
-    employeeCount: options.employeeCount || 0,
-    initialEmployeeDays: options.initialEmployeeDays || null,
-  };
-  if (getAssignmentBlockReason(employee, route, routeOptions)) {
-    return false;
+  if (
+    !options.skipDw5Check &&
+    isSaturday(date) &&
+    (options.employeeCount || 0) > 0
+  ) {
+    const dw5Reason = getSaturdayDw5BlockReason(
+      employee,
+      date,
+      schedules,
+      routes,
+      options.employeeCount,
+      { initialEmployeeDays: options.initialEmployeeDays }
+    );
+    if (dw5Reason) return false;
   }
 
   return true;
@@ -245,6 +259,40 @@ const routeCheckOptions = (ctx) => ({
   employeeCount: ctx.employees.length,
   initialEmployeeDays: ctx.initialEmployeeDays,
 });
+
+/** Trasy widoczne w dropdownie dla pracownika (jak ScheduleView). */
+const getRoutesAvailableForEmployeeOnDay = (employee, date, ctx) => {
+  const assignedToOthers = new Set(
+    ctx.workingSchedules
+      .filter(
+        (s) =>
+          s.date === date &&
+          s.route_id &&
+          s.employee_id?.toString() !== employee.id.toString()
+      )
+      .map((s) => s.route_id.toString())
+  );
+
+  const candidates = ctx.routes.filter((r) => {
+    if (assignedToOthers.has(r.id.toString())) return false;
+    const taken = findRouteAssignment(date, r.id, ctx.workingSchedules);
+    if (taken && taken.employee_id?.toString() !== employee.id.toString()) {
+      return false;
+    }
+    return canEmployeeTakeRouteOnDay(
+      employee,
+      r,
+      ctx.routes,
+      date,
+      ctx.workingSchedules,
+      ctx.month,
+      ctx.year,
+      routeCheckOptions(ctx)
+    );
+  });
+
+  return sortRoutesByAssignmentPriority(candidates);
+};
 
 const assignRouteToEmployee = (employee, route, date, ctx) => {
   if (!isEmployeeDayFreeForRoute(employee.id, date, ctx)) return false;
@@ -947,6 +995,22 @@ const isEmployeeWeekdayEmpty = (employeeId, date, ctx) => {
 const tryFillEmptyDayForEmployee = (employee, date, ctx) => {
   if (!isEmployeeWeekdayEmpty(employee.id, date, ctx)) return false;
 
+  const uiRoutes = getRoutesAvailableForEmployeeOnDay(employee, date, ctx)
+    .map((route) => ({
+      route,
+      score: scoreRouteForEmployeeHours(employee, route, ctx, {
+        forceCoverage: true,
+        date,
+      }),
+    }))
+    .sort((a, b) => a.score - b.score);
+
+  for (const { route } of uiRoutes) {
+    if (assignRouteToEmployee(employee, route, date, ctx)) {
+      return true;
+    }
+  }
+
   const route = findBestRouteForEmployeeOnDay(employee, date, ctx, { forceCoverage: true });
   if (route && assignRouteToEmployee(employee, route, date, ctx)) {
     return true;
@@ -1046,9 +1110,10 @@ const fillRemainingEmptyEmployeeDays = (ctx) => {
         .filter((e) => isEmployeeWeekdayEmpty(e.id, date, ctx))
         .sort(
           (a, b) =>
+            getHourGap(b, ctx) - getHourGap(a, ctx) ||
+            getQuarterHourGap(b, ctx) - getQuarterHourGap(a, ctx) ||
             countEmployeeRouteDaysInMonth(a.id, ctx) -
               countEmployeeRouteDaysInMonth(b.id, ctx) ||
-            getQuarterHourGap(b, ctx) - getQuarterHourGap(a, ctx) ||
             getEmployeePartTime(a) - getEmployeePartTime(b) ||
             a.id - b.id
         );
@@ -1071,6 +1136,49 @@ const fillRemainingEmptyEmployeeDays = (ctx) => {
         }
       }
     }
+  }
+};
+
+/**
+ * Agresywne uzupełnianie: pracownicy z deficytem godzin + pusty dzień → pierwsza trasa z dropdownu.
+ */
+const fillUnderHourEmployeeGaps = (ctx) => {
+  for (let pass = 0; pass < 40; pass++) {
+    let any = false;
+
+    const underHour = [...ctx.employees]
+      .filter((e) => getHourGap(e, ctx) > 1 || getQuarterHourGap(e, ctx) > 1)
+      .sort(
+        (a, b) =>
+          getHourGap(b, ctx) - getHourGap(a, ctx) ||
+          getQuarterHourGap(b, ctx) - getQuarterHourGap(a, ctx) ||
+          a.id - b.id
+      );
+
+    for (const emp of underHour) {
+      for (const date of listWeekdaysInMonth(ctx.month, ctx.year)) {
+        if (!isEmployeeWeekdayEmpty(emp.id, date, ctx)) continue;
+
+        const available = getRoutesAvailableForEmployeeOnDay(emp, date, ctx)
+          .map((route) => ({
+            route,
+            score: scoreRouteForEmployeeHours(emp, route, ctx, {
+              forceCoverage: true,
+              date,
+            }),
+          }))
+          .sort((a, b) => a.score - b.score);
+
+        for (const { route } of available) {
+          if (assignRouteToEmployee(emp, route, date, ctx)) {
+            any = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!any) break;
   }
 };
 
@@ -1541,6 +1649,8 @@ function generateAutoFillAssignments({
   ensureWeekdayCoverage(ctx);
   fillAllOperatingRouteSlots(ctx);
   fillRemainingEmptyEmployeeDays(ctx);
+  fillUnderHourEmployeeGaps(ctx);
+  fillRemainingEmptyEmployeeDays(ctx);
 
   const extraLabels = generateDw5Proposals(
     ctx.workingSchedules,
@@ -1565,6 +1675,7 @@ module.exports = {
   generateAutoFillAssignments,
   buildLockedRouteSlots,
   buildInitialSnapshot,
+  hasMeaningfulAssignment,
   canEmployeeTakeRouteOnDay,
   balanceEmployeeMonth,
 };

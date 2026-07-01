@@ -3,7 +3,7 @@ const { Schedule, Employee, Route } = require('../models');
 const { Op } = require('sequelize');
 const { canAssignEmployeeToRoute, getAssignmentBlockReason, findPairRoute } = require('../utils/routeAssignment');
 const { enrichRouteWithOperatingDays, attachOperatingDays } = require('../utils/routeDayHelpers');
-const { generateAutoFillAssignments } = require('../utils/scheduleAutoFill');
+const { generateAutoFillAssignments, hasMeaningfulAssignment } = require('../utils/scheduleAutoFill');
 const { getQuarterMonths } = require('../utils/scheduleHours');
 const { generateMonthRouteAssignments } = require('../utils/assignMonth');
 const { generateDw5Proposals } = require('../utils/scheduleRules');
@@ -217,6 +217,18 @@ exports.updateScheduleCell = async (req, res) => {
       }
     }
 
+    if (!route_id && !label && employee_id) {
+      await Schedule.destroy({
+        where: {
+          date,
+          employee_id,
+          route_id: { [Op.is]: null },
+          [Op.or]: [{ label: null }, { label: '' }],
+        },
+      });
+      return res.json({ message: 'Grafik zaktualizowany', schedule: null });
+    }
+
     // WYBÓR KLUCZA WYSZUKIWANIA
     const where = route_id
       ? { date, route_id }            // dla tras: klucz to data+trasa
@@ -333,8 +345,20 @@ exports.autoFillRoutes = async (req, res) => {
     const qMonths = getQuarterMonths(monthNum);
     const startQuarter = `${yearNum}-${String(qMonths[0]).padStart(2, '0')}-01`;
 
-    const [employees, routesRaw, schedules, quarterSchedulesRaw] = await Promise.all([
-      Employee.findAll({ where: { city_id: cityId, user_id } }),
+    const employees = await Employee.findAll({ where: { city_id: cityId, user_id } });
+    const employeeIds = employees.map((e) => e.id);
+    if (employeeIds.length > 0) {
+      await Schedule.destroy({
+        where: {
+          date: { [Op.between]: [startDate, endDate] },
+          employee_id: { [Op.in]: employeeIds },
+          route_id: { [Op.is]: null },
+          [Op.or]: [{ label: null }, { label: '' }],
+        },
+      });
+    }
+
+    const [routesRaw, schedules, quarterSchedulesRaw] = await Promise.all([
       Route.findAll({ where: { main_city_id: cityId, user_id } }),
       Schedule.findAll({
         where: { date: { [Op.between]: [startDate, endDate] } },
@@ -347,12 +371,13 @@ exports.autoFillRoutes = async (req, res) => {
     const routes = await attachOperatingDays(routesRaw);
     const activeRoutes = routes.filter(routeHasSegments);
     const cityEmployeeIds = new Set(employees.map((e) => e.id.toString()));
-    const citySchedules = schedules.filter((s) =>
-      cityEmployeeIds.has(s.employee_id?.toString())
-    );
+    const citySchedules = schedules
+      .filter((s) => cityEmployeeIds.has(s.employee_id?.toString()))
+      .filter(hasMeaningfulAssignment);
     const quarterSchedules = quarterSchedulesRaw
       .filter((s) => cityEmployeeIds.has(s.employee_id?.toString()))
-      .filter((s) => parseInt(s.date.split('-')[1], 10) !== monthNum);
+      .filter((s) => parseInt(s.date.split('-')[1], 10) !== monthNum)
+      .filter(hasMeaningfulAssignment);
 
     const { routeAssignments, labelAssignments } = generateAutoFillAssignments({
       employees,
