@@ -315,11 +315,34 @@ const pushAssignment = (ctx, { date, route_id, employee_id }, options = {}) => {
 };
 
 /** Symulacja zapisu — tylko propozycje, które przejdą walidację persist. */
-const filterPersistableAssignments = (proposals, schedules, routes, employees = []) => {
-  const sim = schedules.map((s) => ({ ...s }));
+const filterPersistableAssignments = (
+  proposals,
+  workingSchedules,
+  routes,
+  employees = []
+) => {
+  const seenRouteKeys = new Set();
+  const deduped = [];
+  for (const item of proposals) {
+    const routeKey = `${item.date}|${item.route_id?.toString()}`;
+    if (seenRouteKeys.has(routeKey)) continue;
+    seenRouteKeys.add(routeKey);
+    deduped.push(item);
+  }
+
+  const proposalRouteKeys = new Set(
+    deduped.map((p) => `${p.date}|${p.route_id?.toString()}`)
+  );
+  const sim = workingSchedules
+    .filter(
+      (s) =>
+        !s.route_id ||
+        !proposalRouteKeys.has(`${s.date}|${s.route_id?.toString()}`)
+    )
+    .map((s) => ({ ...s }));
   const kept = [];
 
-  for (const item of proposals) {
+  for (const item of deduped) {
     if (findRouteAssignment(item.date, item.route_id, sim)) {
       continue;
     }
@@ -512,6 +535,13 @@ const isWeekday = (date) => {
 
 const listWeekdaysInMonth = (month, year) =>
   listMonthDates(month, year).filter(isWeekday);
+
+const listSaturdaysInMonth = (month, year) =>
+  listMonthDates(month, year).filter(isSaturday);
+
+/** Dni robocze + soboty (bez niedziel). */
+const listFillableDaysInMonth = (month, year) =>
+  listMonthDates(month, year).filter((d) => isWeekday(d) || isSaturday(d));
 
 const countEmployeeFreeWeekdays = (employeeId, ctx) =>
   listWeekdaysInMonth(ctx.month, ctx.year).filter((date) =>
@@ -891,6 +921,53 @@ const findBestSwapForEmployee = (employee, ctx) => {
   return best;
 };
 
+/** Sobotnie trasy + DW5 — przed masowym wypełnianiem pn–pt (żeby zostawić slot DW5 w nast. tygodniu). */
+const fillSaturdayRoutes = (ctx) => {
+  for (const date of listSaturdaysInMonth(ctx.month, ctx.year)) {
+    const openRoutes = sortOpenRoutesForFill(ctx.routes, date, ctx);
+
+    for (const route of openRoutes) {
+      if (findRouteAssignment(date, route.id, ctx.workingSchedules)) continue;
+
+      const candidates = ctx.employees
+        .filter((emp) => isEmployeeDayFreeForRoute(emp.id, date, ctx))
+        .filter((emp) =>
+          canEmployeeTakeRouteOnDay(
+            emp,
+            route,
+            ctx.routes,
+            date,
+            ctx.workingSchedules,
+            ctx.month,
+            ctx.year,
+            routeCheckOptions(ctx)
+          )
+        )
+        .sort((a, b) => {
+          const scoreA = scoreRouteForEmployeeHours(a, route, ctx, { date, forceCoverage: true });
+          const scoreB = scoreRouteForEmployeeHours(b, route, ctx, { date, forceCoverage: true });
+          return (
+            scoreA - scoreB ||
+            getHourGap(b, ctx) - getHourGap(a, ctx) ||
+            compareEmployeesForRoute(a, b, route, ctx.routes) ||
+            a.id - b.id
+          );
+        });
+
+      for (const emp of candidates) {
+        if (assignRouteToEmployee(emp, route, date, ctx)) break;
+      }
+    }
+
+    const freeEmployees = sortFreeEmployeesForCoverage(ctx.employees, date, ctx);
+    for (const emp of freeEmployees) {
+      if (!isEmployeeWeekdayEmpty(emp.id, date, ctx)) continue;
+      const route = findBestRouteForEmployeeOnDay(emp, date, ctx, { forceCoverage: true });
+      if (route) assignRouteToEmployee(emp, route, date, ctx);
+    }
+  }
+};
+
 /** pn–pt: w każdym dniu rozdaj trasy — najpierw ci, którzy są najbardziej „w tyle” z godzinami. */
 const fillWeekdaysByDay = (ctx) => {
   const weekdays = listWeekdaysInMonth(ctx.month, ctx.year);
@@ -1210,7 +1287,7 @@ const fillRemainingEmptyEmployeeDays = (ctx) => {
     changed = false;
     guard += 1;
 
-    for (const date of listWeekdaysInMonth(ctx.month, ctx.year)) {
+    for (const date of listFillableDaysInMonth(ctx.month, ctx.year)) {
       const emptyEmployees = ctx.employees
         .filter((e) => isEmployeeWeekdayEmpty(e.id, date, ctx))
         .sort(
@@ -1261,7 +1338,7 @@ const fillUnderHourEmployeeGaps = (ctx) => {
       );
 
     for (const emp of underHour) {
-      for (const date of listWeekdaysInMonth(ctx.month, ctx.year)) {
+      for (const date of listFillableDaysInMonth(ctx.month, ctx.year)) {
         if (!isEmployeeWeekdayEmpty(emp.id, date, ctx)) continue;
 
         const available = getRoutesAvailableForEmployeeOnDay(emp, date, ctx)
@@ -1814,6 +1891,9 @@ function generateAutoFillAssignments({
   // Faza 1 — najpierw trasy C/SP z dedykowanymi kierowcami (bez łączenia)
   fillRestrictedRoutesFirst(ctx);
 
+  // Soboty przed pn–pt — rezerwacja DW5 w następnym tygodniu
+  fillSaturdayRoutes(ctx);
+
   // Pokrycie pn–pt: każdy pracownik dostaje po 1 trasie (lub ma label)
   fillWeekdaysByDay(ctx);
 
@@ -1841,6 +1921,8 @@ function generateAutoFillAssignments({
   fillUnderHourEmployeeGaps(ctx);
   fillRemainingEmptyEmployeeDays(ctx);
 
+  fillSaturdayRoutes(ctx);
+
   const extraLabels = generateDw5Proposals(
     ctx.workingSchedules,
     user_id,
@@ -1860,7 +1942,7 @@ function generateAutoFillAssignments({
   return {
     routeAssignments: filterPersistableAssignments(
       ctx.assignments,
-      schedules,
+      ctx.workingSchedules,
       routes,
       ctx.employees
     ),
@@ -1916,7 +1998,12 @@ function generateGapFillOnly({
   }
 
   return {
-    routeAssignments: filterPersistableAssignments(ctx.assignments, schedules, routes, employees),
+    routeAssignments: filterPersistableAssignments(
+      ctx.assignments,
+      ctx.workingSchedules,
+      routes,
+      employees
+    ),
   };
 }
 

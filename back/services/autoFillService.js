@@ -9,6 +9,7 @@ const {
 const { buildScheduleGapReport } = require('../utils/scheduleAutoFillDebug');
 const { getQuarterMonths } = require('../utils/scheduleHours');
 const { persistRouteProposals, persistLabelProposals } = require('../utils/schedulePersist');
+const { isSaturday } = require('../utils/scheduleRules');
 
 const parseWorkingHours = (wh) => {
   if (!wh) return null;
@@ -42,6 +43,13 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
         employee_id: { [Op.in]: employeeIds },
         route_id: { [Op.is]: null },
         [Op.or]: [{ label: null }, { label: '' }],
+      },
+    });
+    await Schedule.destroy({
+      where: {
+        date: { [Op.between]: [startDate, endDate] },
+        employee_id: { [Op.in]: employeeIds },
+        auto_filled: true,
       },
     });
   }
@@ -93,10 +101,14 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
   let firstBatchCreated = 0;
 
   if (routeAssignments.length > 0 || labelAssignments.length > 0) {
-    const routeResult = await runPersistBatch(routeAssignments);
-    firstBatchCreated = routeResult.created.length;
-    created = routeResult.created;
-    persistSkipped.push(...routeResult.skipped);
+    let firstBatchSkipped = [];
+    for (const proposal of routeAssignments) {
+      const routeResult = await runPersistBatch([proposal]);
+      firstBatchCreated += routeResult.created.length;
+      created.push(...routeResult.created);
+      firstBatchSkipped.push(...routeResult.skipped);
+    }
+    persistSkipped.push(...firstBatchSkipped);
     labelsCreated = await persistLabelProposals(labelAssignments, user_id, {
       autoFilled: true,
     });
@@ -123,12 +135,16 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
 
     if (gapProposals.length === 0) break;
 
-    const gapResult = await runPersistBatch(gapProposals);
-    if (gapResult.created.length === 0) break;
+    let roundCreated = 0;
+    for (const proposal of gapProposals) {
+      const gapResult = await runPersistBatch([proposal]);
+      roundCreated += gapResult.created.length;
+      created.push(...gapResult.created);
+      persistSkipped.push(...gapResult.skipped);
+    }
+    if (roundCreated === 0) break;
 
     gapFillRounds += 1;
-    created.push(...gapResult.created);
-    persistSkipped.push(...gapResult.skipped);
     gapSchedules = await Schedule.findAll({
       where: { date: { [Op.between]: [startDate, endDate] } },
     });
@@ -169,7 +185,9 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
       ...(algorithmDebug?.afterAlgorithm?.logs || []),
       '',
       '--- Zapis do bazy ---',
-      `Zaproponowano tras: ${routeAssignments.length}, zapisano w 1. partii: ${firstBatchCreated}`,
+      'Wersja: soboty przed pn–pt + zapis pojedynczy tras',
+      `Zaproponowano tras: ${routeAssignments.length} (w tym soboty: ${routeAssignments.filter((r) => isSaturday(r.date)).length})`,
+      `Zapisano w 1. partii: ${firstBatchCreated}`,
       `Dodatkowe rundy domykania luk: ${gapFillRounds}`,
       `Łącznie zapisano tras: ${created.length}, pominięto: ${persistSkipped.length}`,
       ...persistLogs,
