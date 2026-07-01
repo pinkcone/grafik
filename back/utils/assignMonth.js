@@ -48,7 +48,7 @@ function generateMonthRouteAssignments({
   const dim = daysInMonth(month, year);
   const employeeCount = employees.length > 0 ? employees.length : 1;
   const { initialEmployeeDays } = buildInitialSnapshot(schedules);
-  const routeOptions = { employeeCount, initialEmployeeDays };
+  const routeOptions = { employeeCount, initialEmployeeDays, skipDw5Check: true };
 
   for (let day = 1; day <= dim; day++) {
     const date = buildDate(year, month, day);
@@ -82,7 +82,6 @@ function generateMonthRouteAssignments({
         user_id,
         { initialEmployeeDays }
       );
-      if (!saturdayPkg) continue;
     }
 
     if (!pushRouteAssignment(routeAssignments, workingSchedules, {

@@ -33,7 +33,7 @@ const findPairRoute = (route, allRoutes = []) => {
 };
 
 const getAssignmentBlockReason = (employee, route, options = {}) => {
-  const { pairedRoute = null, date = null, schedules = null, allRoutes = [], employeeCount = 0, initialEmployeeDays = null, skipSlotCheck = false } = options;
+  const { pairedRoute = null, date = null, schedules = null, allRoutes = [], employeeCount = 0, initialEmployeeDays = null, skipSlotCheck = false, skipDw5Check = false } = options;
 
   if (!employee || !route) {
     return 'Brak danych pracownika lub trasy.';
@@ -65,7 +65,7 @@ const getAssignmentBlockReason = (employee, route, options = {}) => {
   const saturdayReason = getSaturdayAssignmentBlockReason(employee, route, date);
   if (saturdayReason) return saturdayReason;
 
-  if (date && isSaturday(date) && employeeCount > 0 && schedules) {
+  if (!skipDw5Check && date && isSaturday(date) && employeeCount > 0 && schedules) {
     const dw5Reason = getSaturdayDw5BlockReason(
       employee,
       date,
@@ -102,7 +102,15 @@ const getAssignmentBlockReason = (employee, route, options = {}) => {
   }
 
   if (pairedRoute) {
-    const pairReason = getAssignmentBlockReason(employee, pairedRoute, { date });
+    const pairReason = getAssignmentBlockReason(employee, pairedRoute, {
+      date,
+      schedules,
+      allRoutes,
+      employeeCount,
+      initialEmployeeDays,
+      skipSlotCheck,
+      skipDw5Check,
+    });
     if (pairReason) {
       return `Trasa powiązana „${pairedRoute.name}”: ${pairReason}`;
     }

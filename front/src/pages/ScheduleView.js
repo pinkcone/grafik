@@ -772,9 +772,8 @@ const handleExportCSV = () => {
       'Najpierw każdy wolny kierowca dostaje po jednej trasie dziennie (bez drugiej trasy).\n' +
       'Godziny są rozkładane wg części etatu (pn–pt × 8h × etat).\n' +
       'Etykieta i trasa tego samego dnia się wykluczają.\n' +
-      'Ten sam kierowca dostaje trasę na cały tydzień (z zastępstwem przy urlopach).\n' +
-      'Trasa sobotnia zawsze idzie w parze z etykietą DW5 (pn → pt → inny dzień roboczy nast. tygodnia).\n' +
-      'ale tylko gdy w tym dniu wszystkie trasy mają już kierowcę.\n' +
+      'Trasy sobotnie z auto-uzupełniania dostają DW5, jeśli jest wolny dzień w nast. tygodniu.\n' +
+      'Brakujące DW5 po ręcznie dodanych trasach sobotnich też zostaną dopisane.\n' +
       'Etykiety (urlopy itd.) nie zostaną zmienione.'
     );
     if (!ok) return;
@@ -813,8 +812,7 @@ const handleExportCSV = () => {
       `Przypisać ${employee?.last_name} ${employee?.first_name} na trasę „${route?.name}” ` +
       `na cały ${month}.${year}?\n\n` +
       'Tylko wolne dni kursowania tej trasy, bez nadpisywania istniejących przypisań.\n' +
-      'Trasy sobotnie zawsze z DW5 (pn → pt → inny dzień roboczy nast. tygodnia).\n' +
-      'jeśli w tym dniu nie zostanie żadna trasa bez kierowcy.'
+      'DW5 po sobotach zostanie dopisane automatycznie, jeśli jest wolny dzień w nast. tygodniu.'
     );
     if (!ok) return;
 

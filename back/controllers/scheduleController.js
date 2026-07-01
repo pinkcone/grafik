@@ -6,7 +6,7 @@ const { enrichRouteWithOperatingDays, attachOperatingDays } = require('../utils/
 const { generateAutoFillAssignments } = require('../utils/scheduleAutoFill');
 const { getQuarterMonths } = require('../utils/scheduleHours');
 const { generateMonthRouteAssignments } = require('../utils/assignMonth');
-const { generateDw5Proposals, isSaturday, planSaturdayDw5Package } = require('../utils/scheduleRules');
+const { generateDw5Proposals } = require('../utils/scheduleRules');
 const { hasEmployeeLabelOnDay } = require('../utils/scheduleLabels');
 const { canEmployeeHaveAnotherRouteOnDay } = require('../utils/scheduleConstraints');
 
@@ -162,8 +162,6 @@ exports.updateScheduleCell = async (req, res) => {
       }
     }
 
-    let saturdayDw5Package = null;
-
     if (route_id && employee_id) {
       const dayEntries = await Schedule.findAll({ where: { date, employee_id } });
       const daySchedules = dayEntries.map((s) => (s.toJSON ? s.toJSON() : s));
@@ -190,32 +188,14 @@ exports.updateScheduleCell = async (req, res) => {
         where: { city_id: employee.city_id, user_id },
       });
 
-      if (isSaturday(date)) {
-        const endDate = addDaysToDate(date, 14);
-        const citySchedulesRaw = await Schedule.findAll({
-          where: {
-            employee_id: { [Op.in]: cityEmployees.map((e) => e.id) },
-            date: { [Op.between]: [date, endDate] },
-          },
-        });
-        const citySchedules = citySchedulesRaw.map((s) => (s.toJSON ? s.toJSON() : s));
-
-        saturdayDw5Package = planSaturdayDw5Package(
-          date,
-          employee_id,
-          citySchedules,
-          userRoutes,
-          cityEmployees.length,
-          user_id
-        );
-        if (!saturdayDw5Package) {
-          return res.status(400).json({
-            message:
-              'Brak wolnego dnia na DW5 w następnym tygodniu (pn → pt → inny dzień roboczy). ' +
-              'Trasa sobotnia wymaga DW5 — nie można przypisać samej trasy.',
-          });
-        }
-      }
+      const manualRouteOptions = {
+        pairedRoute: findPairRoute(routeWithDays, userRoutes),
+        date,
+        schedules: daySchedules,
+        allRoutes: userRoutes,
+        employeeCount: cityEmployees.length,
+        skipDw5Check: true,
+      };
 
       const canTakeRoute =
         canEmployeeHaveAnotherRouteOnDay(employee_id, route_id, date, daySchedules, userRoutes) ||
@@ -229,20 +209,8 @@ exports.updateScheduleCell = async (req, res) => {
       }
 
       const pairedRoute = findPairRoute(routeWithDays, userRoutes);
-      if (!canAssignEmployeeToRoute(employee, routeWithDays, {
-        pairedRoute,
-        date,
-        schedules: daySchedules,
-        allRoutes: userRoutes,
-        employeeCount: cityEmployees.length,
-      })) {
-        const reason = getAssignmentBlockReason(employee, routeWithDays, {
-          pairedRoute,
-          date,
-          schedules: daySchedules,
-          allRoutes: userRoutes,
-          employeeCount: cityEmployees.length,
-        });
+      if (!canAssignEmployeeToRoute(employee, routeWithDays, manualRouteOptions)) {
+        const reason = getAssignmentBlockReason(employee, routeWithDays, manualRouteOptions);
         return res.status(400).json({
           message: reason || 'Pracownik nie spełnia wymagań trasy.',
         });
@@ -275,10 +243,6 @@ exports.updateScheduleCell = async (req, res) => {
         user_id,
         auto_filled: false,
       });
-    }
-
-    if (saturdayDw5Package) {
-      await persistLabelProposals([saturdayDw5Package.labelProposal], user_id);
     }
 
     return res.json({ message: 'Grafik zaktualizowany', schedule });
@@ -402,7 +366,7 @@ exports.autoFillRoutes = async (req, res) => {
 
     if (routeAssignments.length === 0 && labelAssignments.length === 0) {
       return res.json({
-        message: 'Brak pustych slotów tras do uzupełnienia.',
+        message: 'Brak pustych slotów tras do uzupełnienia i brak brakujących DW5.',
         created: 0,
         labelsCreated: 0,
         assignments: [],
@@ -412,9 +376,19 @@ exports.autoFillRoutes = async (req, res) => {
     const created = await persistRouteProposals(routeAssignments, user_id, { autoFilled: true });
     const labelsCreated = await persistLabelProposals(labelAssignments, user_id, { autoFilled: true });
 
+    let message = '';
+    if (created.length > 0) {
+      message = `Uzupełniono ${created.length} przypisań tras`;
+    }
+    if (labelsCreated.length > 0) {
+      message += message
+        ? ` i ${labelsCreated.length} etykiet DW5.`
+        : `Dodano ${labelsCreated.length} brakujących etykiet DW5 (po ręcznych trasach sobotnich).`;
+    }
+    if (!message) message = 'Grafik bez zmian.';
+
     return res.json({
-      message: `Uzupełniono ${created.length} przypisań tras` +
-        (labelsCreated.length > 0 ? ` i ${labelsCreated.length} etykiet DW5.` : '.'),
+      message,
       created: created.length,
       labelsCreated: labelsCreated.length,
       assignments: created,
