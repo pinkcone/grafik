@@ -44,9 +44,11 @@ const getAssignmentBlockReason = (employee, route, options = {}) => {
   }
 
   if (!skipSlotCheck && date && schedules && allRoutes.length > 0) {
+    const slotOpts = { licenseCategory: employee.license_category ?? null };
     const canTake =
-      canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, schedules, allRoutes) ||
+      canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, schedules, allRoutes, slotOpts) ||
       canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, schedules, allRoutes, {
+        ...slotOpts,
         allowPairLeg: true,
       });
     if (!canTake) {

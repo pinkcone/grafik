@@ -820,7 +820,8 @@ const handleExportCSV = () => {
     const ok = window.confirm(
       'Uzupełnić puste sloty tras w tym miesiącu?\n\n' +
       'Najpierw każdy wolny kierowca dostaje po jednej trasie dziennie.\n' +
-      'Dopiero gdy wszyscy mają pierwszą trasę, możliwa jest druga (max 2 trasy/dzień).\n' +
+      'Dopiero gdy wszyscy mają pierwszą trasę, kierowcy B mogą dostać drugą (max 2 trasy/dzień).\n' +
+      'Kierowcy z kat. C — tylko 1 trasa dziennie.\n' +
       'Godziny są rozkładane wg części etatu (pn–pt × 8h × etat).\n' +
       'Etykieta i trasa tego samego dnia się wykluczają.\n' +
       'Trasy sobotnie z auto-uzupełniania dostają DW5, jeśli jest wolny dzień w nast. tygodniu.\n' +
@@ -1026,8 +1027,11 @@ const prepareRoutesSheet = () => {
           if (hasEmployeeLabelOnDay(emp.id, date, schedules)) return false;
           if (!canAssignEmployeeToRouteWithPair(emp, route, routes, date, schedules)) return false;
           return (
-            canEmployeeHaveAnotherRouteOnDay(emp.id, routeId, date, schedules, routes) ||
             canEmployeeHaveAnotherRouteOnDay(emp.id, routeId, date, schedules, routes, {
+              licenseCategory: emp.license_category ?? null,
+            }) ||
+            canEmployeeHaveAnotherRouteOnDay(emp.id, routeId, date, schedules, routes, {
+              licenseCategory: emp.license_category ?? null,
               allowPairLeg: true,
             })
           );

@@ -1,4 +1,4 @@
-const { Schedule, Route } = require('../models');
+const { Schedule, Route, Employee } = require('../models');
 const { attachOperatingDays } = require('./routeDayHelpers');
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 const { canPersistRouteAssignment } = require('./scheduleConstraints');
@@ -8,6 +8,7 @@ const persistRouteProposals = async (proposals, user_id, { autoFilled = false } 
   const skipped = [];
   const routesCache = new Map();
   const dayStateCache = new Map();
+  const employeeLicenseCache = new Map();
 
   for (const item of proposals) {
     const existing = await Schedule.findOne({
@@ -53,12 +54,20 @@ const persistRouteProposals = async (proposals, user_id, { autoFilled = false } 
     }
     const userRoutes = routesCache.get(user_id);
 
+    if (!employeeLicenseCache.has(item.employee_id)) {
+      const emp = await Employee.findByPk(item.employee_id, {
+        attributes: ['license_category'],
+      });
+      employeeLicenseCache.set(item.employee_id, emp?.license_category ?? null);
+    }
+
     const canTake = canPersistRouteAssignment(
       item.employee_id,
       item.route_id,
       item.date,
       daySchedules,
-      userRoutes
+      userRoutes,
+      { licenseCategory: employeeLicenseCache.get(item.employee_id) }
     );
     if (!canTake) {
       skipped.push({

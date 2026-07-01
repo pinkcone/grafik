@@ -78,9 +78,11 @@ exports.updateScheduleCell = async (req, res) => {
         skipDw5Check: true,
       };
 
+      const slotOpts = { licenseCategory: employee.license_category ?? null };
       const canTakeRoute =
-        canEmployeeHaveAnotherRouteOnDay(employee_id, route_id, date, daySchedules, userRoutes) ||
+        canEmployeeHaveAnotherRouteOnDay(employee_id, route_id, date, daySchedules, userRoutes, slotOpts) ||
         canEmployeeHaveAnotherRouteOnDay(employee_id, route_id, date, daySchedules, userRoutes, {
+          ...slotOpts,
           allowPairLeg: true,
         });
       if (!canTakeRoute) {

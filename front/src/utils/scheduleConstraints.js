@@ -1,5 +1,10 @@
 import { hasEmployeeLabelOnDay } from './scheduleLabels';
 
+export const MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY = 2;
+
+export const getMaxRouteSlotsPerDay = (licenseCategory) =>
+  licenseCategory === 'C' ? 1 : MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY;
+
 export const getPairRouteIdsIncludingSelf = (routeId, routes) => {
   const idStr = routeId.toString();
   const rt = routes.find((r) => r.id.toString() === idStr);
@@ -45,27 +50,40 @@ export const canEmployeeHaveAnotherRouteOnDay = (
   date,
   schedules,
   routes,
-  { allowPairLeg = false } = {}
+  { allowPairLeg = false, allowStackedRoute = false, licenseCategory = null } = {}
 ) => {
   if (hasEmployeeLabelOnDay(employeeId, date, schedules)) return false;
 
   const slotCount = getEmployeeRouteSlotCountOnDay(employeeId, date, schedules, routes);
+  const maxSlots = getMaxRouteSlotsPerDay(licenseCategory);
+
   if (slotCount === 0) return true;
-  if (!allowPairLeg) return false;
 
-  const pairIds = new Set(getPairRouteIdsIncludingSelf(routeId, routes).map(String));
-  const employeeRouteIds = schedules
-    .filter(
-      (s) =>
-        s.date === date &&
-        s.employee_id?.toString() === employeeId.toString() &&
-        s.route_id
-    )
-    .map((s) => s.route_id.toString());
+  if (allowPairLeg) {
+    const pairIds = new Set(getPairRouteIdsIncludingSelf(routeId, routes).map(String));
+    const employeeRouteIds = schedules
+      .filter(
+        (s) =>
+          s.date === date &&
+          s.employee_id?.toString() === employeeId.toString() &&
+          s.route_id
+      )
+      .map((s) => s.route_id.toString());
 
-  return (
-    employeeRouteIds.length === 1 &&
-    pairIds.has(employeeRouteIds[0]) &&
-    pairIds.size > 1
-  );
+    if (
+      employeeRouteIds.length === 1 &&
+      pairIds.has(employeeRouteIds[0]) &&
+      pairIds.size > 1
+    ) {
+      return true;
+    }
+  }
+
+  if (slotCount >= maxSlots) return false;
+
+  if (allowStackedRoute) {
+    return false;
+  }
+
+  return false;
 };

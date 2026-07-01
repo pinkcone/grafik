@@ -1,8 +1,11 @@
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 const { routesTimeOverlap } = require('./scheduleHours');
 
-/** Maks. liczba niezależnych tras (para = 1 slot) u jednego kierowcy w dniu. */
+/** Maks. liczba niezależnych tras (para = 1 slot) u kierowcy B w dniu. */
 const MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY = 2;
+
+const getMaxRouteSlotsPerDay = (licenseCategory) =>
+  licenseCategory === 'C' ? 1 : MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY;
 
 const getPairRouteIdsIncludingSelf = (routeId, routes) => {
   const idStr = routeId.toString();
@@ -84,11 +87,13 @@ const canEmployeeHaveAnotherRouteOnDay = (
   date,
   schedules,
   routes,
-  { allowPairLeg = false, allowStackedRoute = false } = {}
+  { allowPairLeg = false, allowStackedRoute = false, licenseCategory = null } = {}
 ) => {
   if (hasEmployeeLabelOnDay(employeeId, date, schedules)) return false;
 
   const slotCount = getEmployeeRouteSlotCountOnDay(employeeId, date, schedules, routes);
+  const maxSlots = getMaxRouteSlotsPerDay(licenseCategory);
+
   if (slotCount === 0) return true;
 
   if (allowPairLeg) {
@@ -103,8 +108,9 @@ const canEmployeeHaveAnotherRouteOnDay = (
     }
   }
 
+  if (slotCount >= maxSlots) return false;
+
   if (allowStackedRoute) {
-    if (slotCount >= MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY) return false;
     return !wouldNewRouteOverlapEmployeeDay(employeeId, routeId, date, schedules, routes);
   }
 
@@ -117,18 +123,26 @@ const canPersistRouteAssignment = (
   routeId,
   date,
   schedules,
-  routes
-) =>
-  canEmployeeHaveAnotherRouteOnDay(employeeId, routeId, date, schedules, routes) ||
-  canEmployeeHaveAnotherRouteOnDay(employeeId, routeId, date, schedules, routes, {
-    allowPairLeg: true,
-  }) ||
-  canEmployeeHaveAnotherRouteOnDay(employeeId, routeId, date, schedules, routes, {
-    allowStackedRoute: true,
-  });
+  routes,
+  { licenseCategory = null } = {}
+) => {
+  const base = { licenseCategory };
+  return (
+    canEmployeeHaveAnotherRouteOnDay(employeeId, routeId, date, schedules, routes, base) ||
+    canEmployeeHaveAnotherRouteOnDay(employeeId, routeId, date, schedules, routes, {
+      ...base,
+      allowPairLeg: true,
+    }) ||
+    canEmployeeHaveAnotherRouteOnDay(employeeId, routeId, date, schedules, routes, {
+      ...base,
+      allowStackedRoute: true,
+    })
+  );
+};
 
 module.exports = {
   MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY,
+  getMaxRouteSlotsPerDay,
   getPairRouteIdsIncludingSelf,
   getEmployeeRouteSlotCountOnDay,
   hasEmployeeRouteOnDay,

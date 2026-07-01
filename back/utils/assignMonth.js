@@ -55,7 +55,9 @@ function generateMonthRouteAssignments({
     if (!isRouteOperatingOnDate(route, date)) continue;
     if (findRouteAssignment(date, route.id, workingSchedules)) continue;
     if (hasEmployeeLabelOnDay(employee.id, date, workingSchedules)) continue;
-    if (!canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, workingSchedules, routes)) {
+    if (!canEmployeeHaveAnotherRouteOnDay(employee.id, route.id, date, workingSchedules, routes, {
+      licenseCategory: employee.license_category ?? null,
+    })) {
       continue;
     }
     if (!canEmployeeTakeRouteOnDay(
@@ -98,6 +100,7 @@ function generateMonthRouteAssignments({
         canAssignEmployeeToRouteWithPair(employee, pairRoute, routes, date, workingSchedules) &&
         canEmployeeHaveAnotherRouteOnDay(employee.id, pairRoute.id, date, workingSchedules, routes, {
           allowPairLeg: true,
+          licenseCategory: employee.license_category ?? null,
         })
       ) {
         pushRouteAssignment(routeAssignments, workingSchedules, {

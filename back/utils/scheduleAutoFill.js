@@ -7,6 +7,7 @@ const {
   getRouteRestrictionTierWithPair,
   hasSpecialPermissions,
   sortRoutesByAssignmentPriority,
+  compareEmployeesForRoute,
 } = require('./routeAssignment');
 const { isRouteOperatingOnDate, getIsoWeekday } = require('./routeOperatingDays');
 const {
@@ -129,15 +130,15 @@ const getGapCloseThreshold = (employee, ctx) => {
 };
 
 /**
- * Kolejność układania: najpierw najmniej elastyczni.
- * 0 = B bez SP, 1 = C bez SP, 2 = B + SP, 3 = C + SP (SP dzielą resztę na końcu).
+ * Kolejność układania kierowców: najpierw najrzadsi (C+SP), na końcu B.
+ * 0 = C + SP, 1 = samo C, 2 = B + SP, 3 = samo B.
  */
 const getEmployeeFillOrderRank = (employee) => {
   const hasSP = hasSpecialPermissions(employee?.special_permissions);
   const isC = employee?.license_category === 'C';
-  if (!hasSP && !isC) return 0;
-  if (!hasSP && isC) return 1;
-  if (hasSP && !isC) return 2;
+  if (isC && hasSP) return 0;
+  if (isC) return 1;
+  if (hasSP) return 2;
   return 3;
 };
 
@@ -243,6 +244,11 @@ const removeDw5AfterSaturday = (ctx, employeeId, saturdayDate) => {
   );
 };
 
+const getEmployeeLicenseCategory = (employeeId, employees) => {
+  const emp = employees?.find((e) => e.id?.toString() === employeeId?.toString());
+  return emp?.license_category ?? null;
+};
+
 const pushAssignment = (ctx, { date, route_id, employee_id }, options = {}) => {
   if (findRouteAssignment(date, route_id, ctx.workingSchedules)) {
     return false;
@@ -259,13 +265,15 @@ const pushAssignment = (ctx, { date, route_id, employee_id }, options = {}) => {
   }
 
   const { allowPairLeg = false, allowStackedRoute = false } = options;
+  const slotOpts = { licenseCategory: getEmployeeLicenseCategory(employee_id, ctx.employees) };
   const canAdd =
     canEmployeeHaveAnotherRouteOnDay(
       employee_id,
       route_id,
       date,
       ctx.workingSchedules,
-      ctx.routes
+      ctx.routes,
+      slotOpts
     ) ||
     (allowPairLeg &&
       canEmployeeHaveAnotherRouteOnDay(
@@ -274,7 +282,7 @@ const pushAssignment = (ctx, { date, route_id, employee_id }, options = {}) => {
         date,
         ctx.workingSchedules,
         ctx.routes,
-        { allowPairLeg: true }
+        { ...slotOpts, allowPairLeg: true }
       )) ||
     (allowStackedRoute &&
       canEmployeeHaveAnotherRouteOnDay(
@@ -283,7 +291,7 @@ const pushAssignment = (ctx, { date, route_id, employee_id }, options = {}) => {
         date,
         ctx.workingSchedules,
         ctx.routes,
-        { allowStackedRoute: true }
+        { ...slotOpts, allowStackedRoute: true }
       ));
 
   if (!canAdd) {
@@ -304,7 +312,7 @@ const pushAssignment = (ctx, { date, route_id, employee_id }, options = {}) => {
 };
 
 /** Symulacja zapisu — tylko propozycje, które przejdą walidację persist. */
-const filterPersistableAssignments = (proposals, schedules, routes) => {
+const filterPersistableAssignments = (proposals, schedules, routes, employees = []) => {
   const sim = schedules.map((s) => ({ ...s }));
   const kept = [];
 
@@ -321,7 +329,8 @@ const filterPersistableAssignments = (proposals, schedules, routes) => {
         item.route_id,
         item.date,
         sim,
-        routes
+        routes,
+        { licenseCategory: getEmployeeLicenseCategory(item.employee_id, employees) }
       )
     ) {
       continue;
@@ -421,7 +430,7 @@ const assignRouteToEmployee = (employee, route, date, ctx) => {
       date,
       ctx.workingSchedules,
       ctx.routes,
-      { allowPairLeg: true }
+      { allowPairLeg: true, licenseCategory: employee.license_category ?? null }
     ) &&
     canAssignEmployeeToRouteWithPair(
       employee,
@@ -728,8 +737,13 @@ const findBestEmployeeForRouteOnDay = (route, date, ctx, options = {}) => {
 
     if (
       score < best.score ||
-      (score === best.score && monthCount < bestMonthCount) ||
       (score === best.score &&
+        compareEmployeesForRoute(emp, best.emp, route, ctx.routes) < 0) ||
+      (score === best.score &&
+        compareEmployeesForRoute(emp, best.emp, route, ctx.routes) === 0 &&
+        monthCount < bestMonthCount) ||
+      (score === best.score &&
+        compareEmployeesForRoute(emp, best.emp, route, ctx.routes) === 0 &&
         monthCount === bestMonthCount &&
         getEmployeePartTime(emp) < getEmployeePartTime(best.emp))
     ) {
@@ -909,9 +923,9 @@ const fillWeekdaysByDay = (ctx) => {
         currentB +
         getQuarterHourGap(b, ctx) * 0.4;
       return (
+        getEmployeeFillOrderRank(a) - getEmployeeFillOrderRank(b) ||
         getEmployeePartTime(a) - getEmployeePartTime(b) ||
         deficitB - deficitA ||
-        getEmployeeFillOrderRank(a) - getEmployeeFillOrderRank(b) ||
         a.id - b.id
       );
     });
@@ -1367,6 +1381,28 @@ const sortOpenRoutesForFill = (routes, date, ctx) =>
       );
     });
 
+/**
+ * Najpierw obsadza trasy wymagające C lub SP — każda osobno, bez łączenia.
+ * Kolejność tras: C+SP → C → B+SP (przed trasami czysto B).
+ */
+const fillRestrictedRoutesFirst = (ctx) => {
+  for (const date of listWeekdaysInMonth(ctx.month, ctx.year)) {
+    const openRoutes = sortOpenRoutesForFill(ctx.routes, date, ctx).filter(
+      (r) => getRouteRestrictionTierWithPair(r, ctx.routes) >= 2
+    );
+
+    for (const route of openRoutes) {
+      if (findRouteAssignment(date, route.id, ctx.workingSchedules)) continue;
+
+      const emp = findBestEmployeeForRouteOnDay(route, date, ctx, { forceCoverage: true });
+      if (emp && assignRouteToEmployee(emp, route, date, ctx)) {
+        continue;
+      }
+      tryCapabilitySwapForRoute(route, date, ctx);
+    }
+  }
+};
+
 const sortFreeEmployeesForCoverage = (employees, date, ctx) =>
   sortEmployeesForFillOrder(employees.filter((e) => isEmployeeDayFreeForRoute(e.id, date, ctx)))
     .sort(
@@ -1606,6 +1642,7 @@ const wouldOverlapEmployeeDay = (employeeId, route, date, ctx) => {
  */
 const canStackRouteOnEmployee = (employee, route, date, ctx) => {
   if (!employee || !route) return false;
+  if (employee.license_category === 'C') return false;
   if (hasEmployeesNeedingFirstRouteOnDay(date, ctx)) return false;
   if (!isEmployeeDayMutable(employee.id, date, ctx.initialEmployeeDays)) return false;
   if (hasEmployeeLabelOnDay(employee.id, date, ctx.workingSchedules)) return false;
@@ -1770,7 +1807,10 @@ function generateAutoFillAssignments({
     user_id,
   };
 
-  // Faza 1 — pokrycie: każdy pracownik dostaje po 1 trasie (lub ma label)
+  // Faza 1 — najpierw trasy C/SP z dedykowanymi kierowcami (bez łączenia)
+  fillRestrictedRoutesFirst(ctx);
+
+  // Pokrycie pn–pt: każdy pracownik dostaje po 1 trasie (lub ma label)
   fillWeekdaysByDay(ctx);
 
   for (const employee of ctx.employees) {
@@ -1817,7 +1857,8 @@ function generateAutoFillAssignments({
     routeAssignments: filterPersistableAssignments(
       ctx.assignments,
       schedules,
-      routes
+      routes,
+      ctx.employees
     ),
     labelAssignments,
     debug: {
@@ -1871,7 +1912,7 @@ function generateGapFillOnly({
   }
 
   return {
-    routeAssignments: filterPersistableAssignments(ctx.assignments, schedules, routes),
+    routeAssignments: filterPersistableAssignments(ctx.assignments, schedules, routes, employees),
   };
 }
 
