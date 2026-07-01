@@ -22,6 +22,7 @@ const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 const {
   getEmployeeRouteSlotCountOnDay,
   canEmployeeHaveAnotherRouteOnDay,
+  canPersistRouteAssignment,
 } = require('./scheduleConstraints');
 const { getAssignmentBlockReason: getRouteAssignmentBlockReason } = require('./routeAssignment');
 const {
@@ -51,12 +52,13 @@ const hasMeaningfulAssignment = (s) =>
 const findRouteAssignment = (date, routeId, schedules) =>
   schedules.find((s) => s.date === date && s.route_id?.toString() === routeId.toString());
 
-/** Snapshot stanu sprzed auto-fill — ręczne wpisy są nietykalne */
+/** Snapshot stanu sprzed auto-fill — tylko ręczne wpisy (auto_filled można uzupełniać). */
 const buildInitialSnapshot = (schedules) => {
   const initialEmployeeDays = new Set();
   const initialRouteSlots = new Set();
 
   for (const s of schedules) {
+    if (s.auto_filled) continue;
     if (s.employee_id != null && s.date && hasMeaningfulAssignment(s)) {
       initialEmployeeDays.add(employeeDayKey(s.date, s.employee_id));
     }
@@ -240,10 +242,53 @@ const removeDw5AfterSaturday = (ctx, employeeId, saturdayDate) => {
   );
 };
 
-const pushAssignment = (ctx, { date, route_id, employee_id }) => {
+const pushAssignment = (ctx, { date, route_id, employee_id }, options = {}) => {
+  if (findRouteAssignment(date, route_id, ctx.workingSchedules)) {
+    return false;
+  }
+  if (
+    ctx.assignments.some(
+      (a) => a.date === date && a.route_id?.toString() === route_id.toString()
+    )
+  ) {
+    return false;
+  }
   if (hasEmployeeLabelOnDay(employee_id, date, ctx.workingSchedules)) {
     return false;
   }
+
+  const { allowPairLeg = false, allowStackedRoute = false } = options;
+  const canAdd =
+    canEmployeeHaveAnotherRouteOnDay(
+      employee_id,
+      route_id,
+      date,
+      ctx.workingSchedules,
+      ctx.routes
+    ) ||
+    (allowPairLeg &&
+      canEmployeeHaveAnotherRouteOnDay(
+        employee_id,
+        route_id,
+        date,
+        ctx.workingSchedules,
+        ctx.routes,
+        { allowPairLeg: true }
+      )) ||
+    (allowStackedRoute &&
+      canEmployeeHaveAnotherRouteOnDay(
+        employee_id,
+        route_id,
+        date,
+        ctx.workingSchedules,
+        ctx.routes,
+        { allowStackedRoute: true }
+      ));
+
+  if (!canAdd) {
+    return false;
+  }
+
   ctx.assignments.push({ date, route_id, employee_id });
   ctx.workingSchedules.push({
     date,
@@ -252,8 +297,45 @@ const pushAssignment = (ctx, { date, route_id, employee_id }) => {
     label: null,
     assignment_type: 'route',
     user_id: ctx.user_id,
+    auto_filled: true,
   });
   return true;
+};
+
+/** Symulacja zapisu — tylko propozycje, które przejdą walidację persist. */
+const filterPersistableAssignments = (proposals, schedules, routes) => {
+  const sim = schedules.map((s) => ({ ...s }));
+  const kept = [];
+
+  for (const item of proposals) {
+    if (findRouteAssignment(item.date, item.route_id, sim)) {
+      continue;
+    }
+    if (hasEmployeeLabelOnDay(item.employee_id, item.date, sim)) {
+      continue;
+    }
+    if (
+      !canPersistRouteAssignment(
+        item.employee_id,
+        item.route_id,
+        item.date,
+        sim,
+        routes
+      )
+    ) {
+      continue;
+    }
+
+    kept.push(item);
+    sim.push({
+      date: item.date,
+      route_id: item.route_id,
+      employee_id: item.employee_id,
+      label: null,
+    });
+  }
+
+  return kept;
 };
 
 const routeCheckOptions = (ctx) => ({
@@ -348,7 +430,11 @@ const assignRouteToEmployee = (employee, route, date, ctx) => {
       ctx.workingSchedules
     )
   ) {
-    pushAssignment(ctx, { date, route_id: pairRoute.id, employee_id: employee.id });
+    pushAssignment(
+      ctx,
+      { date, route_id: pairRoute.id, employee_id: employee.id },
+      { allowPairLeg: true }
+    );
   }
 
   if (isSaturday(date)) {
@@ -1526,7 +1612,13 @@ const assignStackedRoute = (employee, route, date, ctx) => {
   }
 
   const pairRoute = findPairRoute(route, ctx.routes);
-  if (!pushAssignment(ctx, { date, route_id: route.id, employee_id: employee.id })) {
+  if (
+    !pushAssignment(
+      ctx,
+      { date, route_id: route.id, employee_id: employee.id },
+      { allowStackedRoute: true }
+    )
+  ) {
     return false;
   }
 
@@ -1536,7 +1628,11 @@ const assignStackedRoute = (employee, route, date, ctx) => {
     !wouldOverlapEmployeeDay(employee.id, pairRoute, date, ctx) &&
     canAssignEmployeeToRouteWithPair(employee, pairRoute, ctx.routes, date, ctx.workingSchedules)
   ) {
-    pushAssignment(ctx, { date, route_id: pairRoute.id, employee_id: employee.id });
+    pushAssignment(
+      ctx,
+      { date, route_id: pairRoute.id, employee_id: employee.id },
+      { allowStackedRoute: true }
+    );
   }
 
   if (isSaturday(date)) {
@@ -1670,7 +1766,11 @@ function generateAutoFillAssignments({
   });
 
   return {
-    routeAssignments: ctx.assignments,
+    routeAssignments: filterPersistableAssignments(
+      ctx.assignments,
+      schedules,
+      routes
+    ),
     labelAssignments,
     debug: {
       afterAlgorithm: buildAutoFillAlgorithmReport(ctx),
@@ -1680,8 +1780,57 @@ function generateAutoFillAssignments({
   };
 }
 
+/**
+ * Uzupełnienie luk po zapisie do bazy — tylko puste dni + deficyt godzin.
+ */
+function generateGapFillOnly({
+  employees,
+  routes,
+  schedules,
+  quarterSchedules = [],
+  month,
+  year,
+  user_id,
+}) {
+  const workingSchedules = schedules.map((s) => ({ ...s }));
+  const manualSchedules = schedules.filter((s) => !s.auto_filled);
+  const { initialEmployeeDays, initialRouteSlots } = buildInitialSnapshot(manualSchedules);
+
+  const ctx = {
+    employees: sortEmployeesForFillOrder(employees),
+    routes,
+    workingSchedules,
+    quarterSchedules: quarterSchedules.map((s) => ({ ...s })),
+    assignments: [],
+    labelAssignments: [],
+    initialEmployeeDays,
+    initialRouteSlots,
+    month,
+    year,
+    user_id,
+  };
+
+  for (let pass = 0; pass < 15; pass++) {
+    let any = false;
+    const before = ctx.assignments.length;
+    fillRemainingEmptyEmployeeDays(ctx);
+    fillUnderHourEmployeeGaps(ctx);
+    fillRemainingEmptyEmployeeDays(ctx);
+    if (ctx.assignments.length > before) {
+      any = true;
+    }
+    if (!any) break;
+  }
+
+  return {
+    routeAssignments: filterPersistableAssignments(ctx.assignments, schedules, routes),
+  };
+}
+
 module.exports = {
   generateAutoFillAssignments,
+  generateGapFillOnly,
+  filterPersistableAssignments,
   buildLockedRouteSlots,
   buildInitialSnapshot,
   hasMeaningfulAssignment,

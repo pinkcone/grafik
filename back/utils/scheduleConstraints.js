@@ -1,4 +1,5 @@
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
+const { routesTimeOverlap } = require('./scheduleHours');
 
 const getPairRouteIdsIncludingSelf = (routeId, routes) => {
   const idStr = routeId.toString();
@@ -45,9 +46,34 @@ const getEmployeeRouteSlotCountOnDay = (employeeId, date, schedules, routes) => 
 const hasEmployeeRouteOnDay = (employeeId, date, schedules) =>
   getEmployeeRouteIdsOnDay(employeeId, date, schedules).length > 0;
 
+const getEmployeeRouteObjectsOnDay = (employeeId, date, schedules, routes) =>
+  getEmployeeRouteIdsOnDay(employeeId, date, schedules)
+    .map((rid) => routes.find((r) => r.id.toString() === rid.toString()))
+    .filter(Boolean);
+
+const getRouteObjectsToAdd = (routeId, routes) => {
+  const route = routes.find((r) => r.id.toString() === routeId.toString());
+  if (!route) return [];
+  const pairIds = getPairRouteIdsIncludingSelf(routeId, routes);
+  const objects = [route];
+  for (const pid of pairIds) {
+    if (pid === route.id.toString()) continue;
+    const pairRoute = routes.find((r) => r.id.toString() === pid);
+    if (pairRoute) objects.push(pairRoute);
+  }
+  return objects;
+};
+
+const wouldNewRouteOverlapEmployeeDay = (employeeId, routeId, date, schedules, routes) => {
+  const existing = getEmployeeRouteObjectsOnDay(employeeId, date, schedules, routes);
+  const toAdd = getRouteObjectsToAdd(routeId, routes);
+  return toAdd.some((cand) => existing.some((ex) => routesTimeOverlap(cand, ex)));
+};
+
 /**
  * Czy można dodać trasę. Domyślnie: zero tras w dniu i brak etykiety.
  * allowPairLeg=true tylko przy dopinaniu drugiej nogi pary w tej samej operacji.
+ * allowStackedRoute=true gdy godziny się nie nakładają (druga niezależna trasa tego dnia).
  */
 const canEmployeeHaveAnotherRouteOnDay = (
   employeeId,
@@ -55,26 +81,53 @@ const canEmployeeHaveAnotherRouteOnDay = (
   date,
   schedules,
   routes,
-  { allowPairLeg = false } = {}
+  { allowPairLeg = false, allowStackedRoute = false } = {}
 ) => {
   if (hasEmployeeLabelOnDay(employeeId, date, schedules)) return false;
 
   const slotCount = getEmployeeRouteSlotCountOnDay(employeeId, date, schedules, routes);
   if (slotCount === 0) return true;
-  if (!allowPairLeg) return false;
 
-  const pairIds = new Set(getPairRouteIdsIncludingSelf(routeId, routes).map(String));
-  const employeeRouteIds = getEmployeeRouteIdsOnDay(employeeId, date, schedules);
-  return (
-    employeeRouteIds.length === 1 &&
-    pairIds.has(employeeRouteIds[0]) &&
-    pairIds.size > 1
-  );
+  if (allowPairLeg) {
+    const pairIds = new Set(getPairRouteIdsIncludingSelf(routeId, routes).map(String));
+    const employeeRouteIds = getEmployeeRouteIdsOnDay(employeeId, date, schedules);
+    if (
+      employeeRouteIds.length === 1 &&
+      pairIds.has(employeeRouteIds[0]) &&
+      pairIds.size > 1
+    ) {
+      return true;
+    }
+  }
+
+  if (allowStackedRoute) {
+    return !wouldNewRouteOverlapEmployeeDay(employeeId, routeId, date, schedules, routes);
+  }
+
+  return false;
 };
+
+/** Te same reguły co przy zapisie propozycji do bazy. */
+const canPersistRouteAssignment = (
+  employeeId,
+  routeId,
+  date,
+  schedules,
+  routes
+) =>
+  canEmployeeHaveAnotherRouteOnDay(employeeId, routeId, date, schedules, routes) ||
+  canEmployeeHaveAnotherRouteOnDay(employeeId, routeId, date, schedules, routes, {
+    allowPairLeg: true,
+  }) ||
+  canEmployeeHaveAnotherRouteOnDay(employeeId, routeId, date, schedules, routes, {
+    allowStackedRoute: true,
+  });
 
 module.exports = {
   getPairRouteIdsIncludingSelf,
   getEmployeeRouteSlotCountOnDay,
   hasEmployeeRouteOnDay,
+  getEmployeeRouteObjectsOnDay,
   canEmployeeHaveAnotherRouteOnDay,
+  canPersistRouteAssignment,
 };

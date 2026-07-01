@@ -3,13 +3,13 @@ const { Schedule, Employee, Route } = require('../models');
 const { Op } = require('sequelize');
 const { canAssignEmployeeToRoute, getAssignmentBlockReason, findPairRoute } = require('../utils/routeAssignment');
 const { enrichRouteWithOperatingDays, attachOperatingDays } = require('../utils/routeDayHelpers');
-const { generateAutoFillAssignments, hasMeaningfulAssignment } = require('../utils/scheduleAutoFill');
+const { generateAutoFillAssignments, generateGapFillOnly, hasMeaningfulAssignment } = require('../utils/scheduleAutoFill');
 const { buildScheduleGapReport } = require('../utils/scheduleAutoFillDebug');
 const { getQuarterMonths } = require('../utils/scheduleHours');
 const { generateMonthRouteAssignments } = require('../utils/assignMonth');
 const { generateDw5Proposals } = require('../utils/scheduleRules');
 const { hasEmployeeLabelOnDay } = require('../utils/scheduleLabels');
-const { canEmployeeHaveAnotherRouteOnDay } = require('../utils/scheduleConstraints');
+const { canEmployeeHaveAnotherRouteOnDay, canPersistRouteAssignment } = require('../utils/scheduleConstraints');
 
 const parseWorkingHours = (wh) => {
   if (!wh) return null;
@@ -83,22 +83,13 @@ const persistRouteProposals = async (proposals, user_id, { autoFilled = false } 
     }
     const userRoutes = routesCache.get(user_id);
 
-    const canTake =
-      canEmployeeHaveAnotherRouteOnDay(
-        item.employee_id,
-        item.route_id,
-        item.date,
-        daySchedules,
-        userRoutes
-      ) ||
-      canEmployeeHaveAnotherRouteOnDay(
-        item.employee_id,
-        item.route_id,
-        item.date,
-        daySchedules,
-        userRoutes,
-        { allowPairLeg: true }
-      );
+    const canTake = canPersistRouteAssignment(
+      item.employee_id,
+      item.route_id,
+      item.date,
+      daySchedules,
+      userRoutes
+    );
     if (!canTake) {
       skipped.push({
         date: item.date,
@@ -417,11 +408,20 @@ exports.autoFillRoutes = async (req, res) => {
     const persistSkipped = [];
     let created = [];
     let labelsCreated = [];
+    let gapFillRounds = 0;
+
+    const runPersistBatch = async (proposals) => {
+      if (!proposals || proposals.length === 0) {
+        return { created: [], skipped: [] };
+      }
+      return persistRouteProposals(proposals, user_id, { autoFilled: true });
+    };
+
+    let firstBatchCreated = 0;
 
     if (routeAssignments.length > 0 || labelAssignments.length > 0) {
-      const routeResult = await persistRouteProposals(routeAssignments, user_id, {
-        autoFilled: true,
-      });
+      const routeResult = await runPersistBatch(routeAssignments);
+      firstBatchCreated = routeResult.created.length;
       created = routeResult.created;
       persistSkipped.push(...routeResult.skipped);
       labelsCreated = await persistLabelProposals(labelAssignments, user_id, {
@@ -429,9 +429,39 @@ exports.autoFillRoutes = async (req, res) => {
       });
     }
 
-    const afterSchedules = await Schedule.findAll({
+    let gapSchedules = await Schedule.findAll({
       where: { date: { [Op.between]: [startDate, endDate] } },
     });
+
+    for (let round = 0; round < 25; round++) {
+      const gapCitySchedules = gapSchedules.filter((s) =>
+        cityEmployeeIds.has(s.employee_id?.toString())
+      );
+
+      const { routeAssignments: gapProposals } = generateGapFillOnly({
+        employees,
+        routes: activeRoutes,
+        schedules: gapCitySchedules,
+        quarterSchedules,
+        month: monthNum,
+        year: yearNum,
+        user_id,
+      });
+
+      if (gapProposals.length === 0) break;
+
+      const gapResult = await runPersistBatch(gapProposals);
+      if (gapResult.created.length === 0) break;
+
+      gapFillRounds += 1;
+      created.push(...gapResult.created);
+      persistSkipped.push(...gapResult.skipped);
+      gapSchedules = await Schedule.findAll({
+        where: { date: { [Op.between]: [startDate, endDate] } },
+      });
+    }
+
+    const afterSchedules = gapSchedules;
     const afterCitySchedules = afterSchedules.filter((s) =>
       cityEmployeeIds.has(s.employee_id?.toString())
     );
@@ -458,6 +488,7 @@ exports.autoFillRoutes = async (req, res) => {
       createdRoutes: created.length,
       createdLabels: labelsCreated.length,
       persistSkippedCount: persistSkipped.length,
+      gapFillRounds,
       afterAlgorithm: algorithmDebug?.afterAlgorithm || null,
       afterPersist,
       persistSkipped,
@@ -465,7 +496,9 @@ exports.autoFillRoutes = async (req, res) => {
         ...(algorithmDebug?.afterAlgorithm?.logs || []),
         '',
         '--- Zapis do bazy ---',
-        `Zaproponowano tras: ${routeAssignments.length}, zapisano: ${created.length}`,
+        `Zaproponowano tras: ${routeAssignments.length}, zapisano w 1. partii: ${firstBatchCreated}`,
+        `Dodatkowe rundy domykania luk: ${gapFillRounds}`,
+        `Łącznie zapisano tras: ${created.length}, pominięto: ${persistSkipped.length}`,
         ...persistLogs,
         '',
         ...(afterPersist.logs || []),
