@@ -215,12 +215,37 @@ function ScheduleView({ cityId }) {
       console.groupEnd();
     };
 
+    const applyCompletedJob = async (n) => {
+      const appliedKey = `grafik-applied-job:${n.id}`;
+      if (sessionStorage.getItem(appliedKey)) return;
+
+      let detail = n;
+      const token = localStorage.getItem('token');
+      if (token && n.id) {
+        try {
+          const detailRes = await fetch(`/api/notifications/${n.id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+          });
+          if (detailRes.ok) {
+            const detailData = await detailRes.json();
+            detail = detailData.notification || n;
+          }
+        } catch {
+          // użyj wersji z listy
+        }
+      }
+
+      sessionStorage.setItem(appliedKey, '1');
+      applyDebugFromNotification(detail);
+      await fetchSchedule();
+      await fetchQuarterSchedules();
+    };
+
     const onCompleted = async (e) => {
       const n = e.detail;
       if (String(n.cityId) !== String(cityId) || n.month !== month || n.year !== year) return;
-      applyDebugFromNotification(n);
-      await fetchSchedule();
-      await fetchQuarterSchedules();
+      await applyCompletedJob(n);
     };
 
     const onFailed = (e) => {
@@ -237,6 +262,54 @@ function ScheduleView({ cityId }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityId, month, year]);
+
+  useEffect(() => {
+    const pending = notifications
+      .filter(
+        (n) =>
+          n.type === 'auto_fill' &&
+          n.status === 'completed' &&
+          String(n.cityId) === String(cityId) &&
+          n.month === month &&
+          n.year === year
+      )
+      .sort((a, b) => new Date(b.finishedAt || 0) - new Date(a.finishedAt || 0));
+
+    if (pending.length === 0) return;
+
+    const latest = pending[0];
+    const appliedKey = `grafik-applied-job:${latest.id}`;
+    if (sessionStorage.getItem(appliedKey)) return;
+
+    (async () => {
+      const token = localStorage.getItem('token');
+      let detail = latest;
+      if (token) {
+        try {
+          const detailRes = await fetch(`/api/notifications/${latest.id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+          });
+          if (detailRes.ok) {
+            const detailData = await detailRes.json();
+            detail = detailData.notification || latest;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      sessionStorage.setItem(appliedKey, '1');
+      const debug = detail.result?.debug;
+      if (debug) {
+        setAutoFillDebug(debug);
+        setAutoFillDebugOpen(true);
+      }
+      await fetchSchedule();
+      await fetchQuarterSchedules();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cityId, month, year, notifications]);
 
   const autoFillRunning = notifications.some(
     (n) =>
@@ -844,6 +917,11 @@ const handleExportCSV = () => {
 
       if (res.status === 202) {
         refreshNotifications();
+        alert(
+          data.message ||
+            'Uzupełnianie tras działa na serwerze w tle. Możesz zamknąć przeglądarkę — ' +
+              'wynik pojawi się w powiadomieniach (dzwonek w nagłówku).'
+        );
         return;
       }
 

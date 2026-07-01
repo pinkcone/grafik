@@ -144,7 +144,11 @@ function Header({ onLogout }) {
                           <span className={`app-header__notification-status app-header__notification-status--${n.status}`} />
                           <span className="app-header__notification-body">
                             <span className="app-header__notification-title">{n.title}</span>
-                            <span className="app-header__notification-message">{n.message}</span>
+                            <span className="app-header__notification-message">
+                              {n.status === 'running'
+                                ? 'Trwa na serwerze — możesz zamknąć stronę'
+                                : n.message}
+                            </span>
                             <span className="app-header__notification-time">
                               {formatTime(n.finishedAt || n.createdAt)}
                             </span>

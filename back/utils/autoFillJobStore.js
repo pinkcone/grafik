@@ -1,13 +1,54 @@
 const { randomUUID } = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
-const jobsByUser = new Map();
+const DATA_DIR = path.join(__dirname, '../data');
+const JOBS_FILE = path.join(DATA_DIR, 'autofill-jobs.json');
 const MAX_JOBS_PER_USER = 40;
 
-function getUserJobs(userId) {
-  if (!jobsByUser.has(userId)) {
-    jobsByUser.set(userId, []);
+/** @type {Map<string, object[]>} */
+const jobsByUser = new Map();
+
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
   }
-  return jobsByUser.get(userId);
+}
+
+function loadFromDisk() {
+  try {
+    if (!fs.existsSync(JOBS_FILE)) return;
+    const raw = fs.readFileSync(JOBS_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return;
+    for (const [userId, list] of Object.entries(parsed)) {
+      if (Array.isArray(list)) {
+        jobsByUser.set(userId, list);
+      }
+    }
+  } catch (err) {
+    console.error('Nie udało się wczytać autofill-jobs.json:', err.message);
+  }
+}
+
+function saveToDisk() {
+  try {
+    ensureDataDir();
+    const obj = Object.fromEntries(jobsByUser.entries());
+    fs.writeFileSync(JOBS_FILE, JSON.stringify(obj), 'utf8');
+  } catch (err) {
+    console.error('Nie udało się zapisać autofill-jobs.json:', err.message);
+  }
+}
+
+loadFromDisk();
+
+function getUserJobs(userId) {
+  const key = String(userId);
+  if (!jobsByUser.has(key)) {
+    jobsByUser.set(key, []);
+  }
+  return jobsByUser.get(key);
 }
 
 function formatTitle(job) {
@@ -35,7 +76,7 @@ function toNotification(job, { includeDebug = false } = {}) {
     message:
       job.message ||
       (job.status === 'running'
-        ? 'Trwa uzupełnianie tras…'
+        ? 'Trwa uzupełnianie tras na serwerze…'
         : job.status === 'failed'
           ? job.error || 'Błąd auto-uzupełniania'
           : ''),
@@ -72,6 +113,7 @@ exports.createJob = (userId, meta) => {
   if (list.length > MAX_JOBS_PER_USER) {
     list.splice(MAX_JOBS_PER_USER);
   }
+  saveToDisk();
   return job;
 };
 
@@ -82,6 +124,7 @@ exports.completeJob = (userId, jobId, { message, result }) => {
   job.finishedAt = new Date().toISOString();
   job.message = message;
   job.result = result;
+  saveToDisk();
   return job;
 };
 
@@ -92,6 +135,7 @@ exports.failJob = (userId, jobId, error) => {
   job.finishedAt = new Date().toISOString();
   job.error = error;
   job.message = error;
+  saveToDisk();
   return job;
 };
 
@@ -104,11 +148,18 @@ exports.getJob = (userId, jobId) => {
 
 exports.markJobRead = (userId, jobId) => {
   const job = findJob(userId, jobId);
-  if (job) job.read = true;
+  if (job) {
+    job.read = true;
+    saveToDisk();
+  }
 };
 
 exports.markAllRead = (userId) => {
   getUserJobs(userId).forEach((j) => {
     j.read = true;
   });
+  saveToDisk();
 };
+
+exports.hasRunningJobs = (userId) =>
+  getUserJobs(userId).some((j) => j.status === 'running');

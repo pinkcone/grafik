@@ -9,6 +9,24 @@ import React, {
 
 const NotificationsContext = createContext(null);
 
+const POLL_MS = 3000;
+
+async function fetchJobDetail(token, jobId, fallback) {
+  try {
+    const detailRes = await fetch(`/api/notifications/${jobId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (detailRes.ok) {
+      const detailData = await detailRes.json();
+      return detailData.notification || fallback;
+    }
+  } catch {
+    // użyj wersji z listy
+  }
+  return fallback;
+}
+
 export function NotificationsProvider({ children }) {
   const [notifications, setNotifications] = useState([]);
   const prevStatusRef = useRef({});
@@ -33,19 +51,7 @@ export function NotificationsProvider({ children }) {
       for (const n of list) {
         const prev = prevStatusRef.current[n.id];
         if (n.status === 'completed' && prev === 'running') {
-          let detail = n;
-          try {
-            const detailRes = await fetch(`/api/notifications/${n.id}`, {
-              headers: { Authorization: `Bearer ${token}` },
-              cache: 'no-store',
-            });
-            if (detailRes.ok) {
-              const detailData = await detailRes.json();
-              detail = detailData.notification || n;
-            }
-          } catch {
-            // użyj wersji z listy
-          }
+          const detail = await fetchJobDetail(token, n.id, n);
           window.dispatchEvent(new CustomEvent('grafik-job-completed', { detail }));
         }
         if (n.status === 'failed' && prev === 'running') {
@@ -62,8 +68,19 @@ export function NotificationsProvider({ children }) {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 2500);
-    return () => clearInterval(interval);
+    const interval = setInterval(fetchNotifications, POLL_MS);
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchNotifications();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [fetchNotifications]);
 
   useEffect(() => {

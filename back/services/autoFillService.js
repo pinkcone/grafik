@@ -3,7 +3,6 @@ const { Op } = require('sequelize');
 const { attachOperatingDays } = require('../utils/routeDayHelpers');
 const {
   generateAutoFillAssignments,
-  generateGapFillOnly,
   filterPersistableAssignments,
   hasMeaningfulAssignment,
 } = require('../utils/scheduleAutoFill');
@@ -37,21 +36,6 @@ const pushFilterRejections = (rejected, target) => {
       employee_id: r.item.employee_id,
       reason: `Odfiltrowano przed zapisem: ${r.reason}`,
     });
-  }
-};
-
-const pushCreatedToLiveSchedules = (rows, liveSchedules) => {
-  const seen = new Set(
-    liveSchedules.map(
-      (s) => `${s.date}|${s.route_id?.toString()}|${s.employee_id?.toString()}`
-    )
-  );
-  for (const row of rows) {
-    const plain = toSchedulePlain(row);
-    const key = `${plain.date}|${plain.route_id?.toString()}|${plain.employee_id?.toString()}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    liveSchedules.push(plain);
   }
 };
 
@@ -104,6 +88,8 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
     .filter((s) => parseInt(s.date.split('-')[1], 10) !== monthNum)
     .filter(hasMeaningfulAssignment);
 
+  const baselineSchedules = citySchedules.map(toSchedulePlain);
+
   const { routeAssignments, labelAssignments, debug: algorithmDebug } =
     generateAutoFillAssignments({
       employees,
@@ -116,94 +102,34 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
     });
 
   const persistSkipped = [];
+  const { kept: persistableRoutes, rejected } = filterPersistableAssignments(
+    routeAssignments,
+    baselineSchedules,
+    activeRoutes,
+    employees
+  );
+  pushFilterRejections(rejected, persistSkipped);
+
   let created = [];
   let labelsCreated = [];
-  let gapFillRounds = 0;
 
-  const runPersistBatch = async (proposals) => {
-    if (!proposals || proposals.length === 0) {
-      return { created: [], skipped: [] };
-    }
-    return persistRouteProposals(proposals, user_id, { autoFilled: true });
-  };
+  if (persistableRoutes.length > 0) {
+    const routeResult = await persistRouteProposals(persistableRoutes, user_id, {
+      autoFilled: true,
+    });
+    created = routeResult.created;
+    persistSkipped.push(...routeResult.skipped);
+  }
 
-  let firstBatchCreated = 0;
-
-  if (routeAssignments.length > 0 || labelAssignments.length > 0) {
-    let firstBatchSkipped = [];
-    const liveSchedules = citySchedules.map(toSchedulePlain);
-    for (const proposal of routeAssignments) {
-      const { kept, rejected } = filterPersistableAssignments(
-        [proposal],
-        liveSchedules,
-        activeRoutes,
-        employees
-      );
-      pushFilterRejections(rejected, persistSkipped);
-      const persistable = kept[0];
-      if (!persistable) continue;
-
-      const routeResult = await runPersistBatch([persistable]);
-      firstBatchCreated += routeResult.created.length;
-      created.push(...routeResult.created);
-      firstBatchSkipped.push(...routeResult.skipped);
-      pushCreatedToLiveSchedules(routeResult.created, liveSchedules);
-    }
-    persistSkipped.push(...firstBatchSkipped);
+  if (labelAssignments.length > 0) {
     labelsCreated = await persistLabelProposals(labelAssignments, user_id, {
       autoFilled: true,
     });
   }
 
-  let gapSchedules = await Schedule.findAll({
+  const afterSchedules = await Schedule.findAll({
     where: { date: { [Op.between]: [startDate, endDate] } },
   });
-
-  for (let round = 0; round < 25; round++) {
-    const gapCitySchedules = gapSchedules.filter((s) =>
-      cityEmployeeIds.has(s.employee_id?.toString())
-    );
-
-    const { routeAssignments: gapProposals } = generateGapFillOnly({
-      employees,
-      routes: activeRoutes,
-      schedules: gapCitySchedules,
-      quarterSchedules,
-      month: monthNum,
-      year: yearNum,
-      user_id,
-    });
-
-    if (gapProposals.length === 0) break;
-
-    let roundCreated = 0;
-    const liveSchedules = gapCitySchedules.map(toSchedulePlain);
-    for (const proposal of gapProposals) {
-      const { kept, rejected } = filterPersistableAssignments(
-        [proposal],
-        liveSchedules,
-        activeRoutes,
-        employees
-      );
-      pushFilterRejections(rejected, persistSkipped);
-      const persistable = kept[0];
-      if (!persistable) continue;
-
-      const gapResult = await runPersistBatch([persistable]);
-      roundCreated += gapResult.created.length;
-      created.push(...gapResult.created);
-      persistSkipped.push(...gapResult.skipped);
-      pushCreatedToLiveSchedules(gapResult.created, liveSchedules);
-    }
-    if (roundCreated === 0) break;
-
-    gapFillRounds += 1;
-    gapSchedules = await Schedule.findAll({
-      where: { date: { [Op.between]: [startDate, endDate] } },
-    });
-  }
-
-  const afterSchedules = gapSchedules;
   const afterCitySchedules = afterSchedules.filter((s) =>
     cityEmployeeIds.has(s.employee_id?.toString())
   );
@@ -224,13 +150,16 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
       `POMINIĘTO ZAPIS: ${s.date} trasa #${s.route_id} → kierowca #${s.employee_id}: ${s.reason}`
   );
 
+  const gapFillPasses = algorithmDebug?.gapFillPasses ?? 0;
+
   const debug = {
     proposedRoutes: routeAssignments.length,
     proposedLabels: labelAssignments.length,
+    persistableRoutes: persistableRoutes.length,
     createdRoutes: created.length,
     createdLabels: labelsCreated.length,
     persistSkippedCount: persistSkipped.length,
-    gapFillRounds,
+    gapFillPasses,
     afterAlgorithm: algorithmDebug?.afterAlgorithm || null,
     afterPersist,
     persistSkipped,
@@ -238,11 +167,11 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
       ...(algorithmDebug?.afterAlgorithm?.logs || []),
       '',
       '--- Zapis do bazy ---',
-      'Wersja: diff workingSchedules vs baseline + filtr na baseline',
+      'Wersja: cały grafik w pamięci, jeden zapis na końcu',
       `Zaproponowano tras: ${routeAssignments.length} (w tym soboty: ${routeAssignments.filter((r) => isSaturday(r.date)).length})`,
-      `Zapisano w 1. partii: ${firstBatchCreated}`,
-      `Dodatkowe rundy domykania luk: ${gapFillRounds}`,
-      `Łącznie zapisano tras: ${created.length}, pominięto: ${persistSkipped.length}`,
+      `Do zapisu po filtrze: ${persistableRoutes.length}`,
+      `Domykanie luk w pamięci: ${gapFillPasses} przejść`,
+      `Zapisano tras: ${created.length}, pominięto: ${persistSkipped.length}`,
       ...persistLogs,
       '',
       ...(afterPersist.logs || []),

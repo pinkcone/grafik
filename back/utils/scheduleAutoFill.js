@@ -1969,6 +1969,20 @@ function generateAutoFillAssignments({
 
   fillSaturdayRoutes(ctx);
 
+  let gapFillPasses = 0;
+  for (let pass = 0; pass < 15; pass++) {
+    const before = ctx.assignments.length;
+    fillRemainingEmptyEmployeeDays(ctx);
+    fillUnderHourEmployeeGaps(ctx);
+    fillRemainingEmptyEmployeeDays(ctx);
+    fillSaturdayRoutes(ctx);
+    if (ctx.assignments.length > before) {
+      gapFillPasses += 1;
+    } else {
+      break;
+    }
+  }
+
   const extraLabels = generateDw5Proposals(
     ctx.workingSchedules,
     user_id,
@@ -2004,6 +2018,7 @@ function generateAutoFillAssignments({
       afterAlgorithm: buildAutoFillAlgorithmReport(ctx),
       proposedRoutes: routeProposals.length,
       proposedLabels: labelAssignments.length,
+      gapFillPasses,
     },
   };
 }

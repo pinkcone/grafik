@@ -249,7 +249,7 @@ exports.autoFillRoutes = async (req, res) => {
     return res.status(202).json({
       jobId: job.id,
       message:
-        'Uzupełnianie tras uruchomione w tle. Powiadomienie pojawi się w nagłówku po zakończeniu.',
+        'Uzupełnianie tras działa na serwerze w tle. Możesz zamknąć przeglądarkę — wynik pojawi się w powiadomieniach (dzwonek w nagłówku).',
     });
   } catch (error) {
     console.error('Błąd w autoFillRoutes:', error);
