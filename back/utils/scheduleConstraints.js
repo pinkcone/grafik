@@ -1,6 +1,9 @@
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 const { routesTimeOverlap } = require('./scheduleHours');
 
+/** Maks. liczba niezależnych tras (para = 1 slot) u jednego kierowcy w dniu. */
+const MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY = 2;
+
 const getPairRouteIdsIncludingSelf = (routeId, routes) => {
   const idStr = routeId.toString();
   const rt = routes.find((r) => r.id.toString() === idStr);
@@ -101,6 +104,7 @@ const canEmployeeHaveAnotherRouteOnDay = (
   }
 
   if (allowStackedRoute) {
+    if (slotCount >= MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY) return false;
     return !wouldNewRouteOverlapEmployeeDay(employeeId, routeId, date, schedules, routes);
   }
 
@@ -124,6 +128,7 @@ const canPersistRouteAssignment = (
   });
 
 module.exports = {
+  MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY,
   getPairRouteIdsIncludingSelf,
   getEmployeeRouteSlotCountOnDay,
   hasEmployeeRouteOnDay,

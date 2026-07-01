@@ -819,7 +819,8 @@ const handleExportCSV = () => {
   const handleAutoFillRoutes = async () => {
     const ok = window.confirm(
       'Uzupełnić puste sloty tras w tym miesiącu?\n\n' +
-      'Najpierw każdy wolny kierowca dostaje po jednej trasie dziennie (bez drugiej trasy).\n' +
+      'Najpierw każdy wolny kierowca dostaje po jednej trasie dziennie.\n' +
+      'Dopiero gdy wszyscy mają pierwszą trasę, możliwa jest druga (max 2 trasy/dzień).\n' +
       'Godziny są rozkładane wg części etatu (pn–pt × 8h × etat).\n' +
       'Etykieta i trasa tego samego dnia się wykluczają.\n' +
       'Trasy sobotnie z auto-uzupełniania dostają DW5, jeśli jest wolny dzień w nast. tygodniu.\n' +
