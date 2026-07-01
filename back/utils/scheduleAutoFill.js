@@ -330,15 +330,13 @@ const filterPersistableAssignments = (
     deduped.push(item);
   }
 
-  const proposalRouteKeys = new Set(
-    deduped.map((p) => `${p.date}|${p.route_id?.toString()}`)
-  );
+  const isProposalRow = (s, proposal) =>
+    s.date === proposal.date &&
+    s.route_id?.toString() === proposal.route_id?.toString() &&
+    s.employee_id?.toString() === proposal.employee_id?.toString();
+
   const sim = workingSchedules
-    .filter(
-      (s) =>
-        !s.route_id ||
-        !proposalRouteKeys.has(`${s.date}|${s.route_id?.toString()}`)
-    )
+    .filter((s) => !deduped.some((p) => isProposalRow(s, p)))
     .map((s) => ({ ...s }));
   const kept = [];
 
@@ -1991,6 +1989,7 @@ function generateGapFillOnly({
     fillRemainingEmptyEmployeeDays(ctx);
     fillUnderHourEmployeeGaps(ctx);
     fillRemainingEmptyEmployeeDays(ctx);
+    fillSaturdayRoutes(ctx);
     if (ctx.assignments.length > before) {
       any = true;
     }
