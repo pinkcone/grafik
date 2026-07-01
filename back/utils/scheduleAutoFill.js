@@ -53,6 +53,25 @@ const buildDate = (year, month, day) =>
 const employeeDayKey = (date, employeeId) => `${date}|${employeeId}`;
 const routeSlotKey = (date, routeId) => `${date}|${routeId}`;
 
+/** Przesuwa datę 'YYYY-MM-DD' o `days` dni (kalendarzowo). */
+const shiftDateStr = (dateStr, days) => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  return buildDate(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
+};
+
+/** Poniedziałek tygodnia zawierającego datę. */
+const getWeekMonday = (dateStr) => shiftDateStr(dateStr, 1 - getIsoWeekday(dateStr));
+
+/** Daty pn–sb tygodnia zawierającego datę. */
+const getWeekWorkDates = (dateStr) => {
+  const monday = getWeekMonday(dateStr);
+  const out = [];
+  for (let i = 0; i < 6; i += 1) out.push(shiftDateStr(monday, i));
+  return out;
+};
+
 /** Wpis z trasą lub etykietą — puste placeholdery (assignment_type none) nie blokują auto-fill. */
 const hasMeaningfulAssignment = (s) =>
   s.route_id != null || (s.label != null && String(s.label).trim() !== '');
@@ -60,13 +79,16 @@ const hasMeaningfulAssignment = (s) =>
 const findRouteAssignment = (date, routeId, schedules) =>
   schedules.find((s) => s.date === date && s.route_id?.toString() === routeId.toString());
 
-/** Snapshot stanu sprzed auto-fill — tylko ręczne wpisy (auto_filled można uzupełniać). */
+/**
+ * Snapshot stanu sprzed auto-fill.
+ * Z1: WSZYSTKO co już jest w bazie (ręczne ORAZ wcześniej auto_filled) jest święte —
+ * algorytm może wyłącznie dopełniać puste sloty, nie rusza istniejących wpisów.
+ */
 const buildInitialSnapshot = (schedules) => {
   const initialEmployeeDays = new Set();
   const initialRouteSlots = new Set();
 
   for (const s of schedules) {
-    if (s.auto_filled) continue;
     if (s.employee_id != null && s.date && hasMeaningfulAssignment(s)) {
       initialEmployeeDays.add(employeeDayKey(s.date, s.employee_id));
     }
@@ -755,6 +777,8 @@ const getRoutesAvailableForEmployeeOnDay = (employee, date, ctx) => {
 const assignRouteToEmployee = (employee, route, date, ctx) => {
   if (!isEmployeeDayFreeForRoute(employee.id, date, ctx)) return false;
   if (findRouteAssignment(date, route.id, ctx.workingSchedules)) return false;
+  const saturday = isSaturday(date);
+  const saturdaySnap = saturday ? snapshotCtx(ctx) : null;
   if (!canEmployeeTakeRouteOnDay(
     employee,
     route,
@@ -799,8 +823,12 @@ const assignRouteToEmployee = (employee, route, date, ctx) => {
     );
   }
 
-  if (isSaturday(date)) {
-    forceDw5ForSaturday(ctx, employee.id, date);
+  // Z5: sobotnia trasa MUSI mieć DW5 w następnym tygodniu. Jeśli dla tego kierowcy
+  // wszystkie 5 dni-kandydatów jest zablokowanych ręcznie — cofamy sobotę, żeby
+  // spróbować oddać ją komuś, komu DW5 da się przypisać.
+  if (saturday && !forceDw5ForSaturday(ctx, employee.id, date)) {
+    restoreCtx(ctx, saturdaySnap);
+    return false;
   }
 
   return true;
@@ -934,94 +962,72 @@ const countEmployeeRouteInMonth = (employeeId, routeId, ctx) => {
   ).length;
 };
 
-/** Ile razy kierowca jechał trasę w kwartale (miesiące wcześniejsze + bieżący). */
-const countEmployeeRouteInQuarter = (employeeId, routeId, ctx) => {
-  let count = countEmployeeRouteInMonth(employeeId, routeId, ctx);
-  const rid = routeId.toString();
-
-  for (const m of getQuarterMonths(ctx.month)) {
-    if (m === ctx.month) continue;
-    const prefix = `${ctx.year}-${String(m).padStart(2, '0')}`;
-    count += (ctx.quarterSchedules || []).filter(
-      (s) =>
-        s.employee_id?.toString() === employeeId.toString() &&
-        s.route_id?.toString() === rid &&
-        s.date?.startsWith(prefix)
-    ).length;
+/** Trasa, którą kierowca jeździ w INNE dni tego samego tygodnia (najczęstsza). */
+const getEmployeeWeekRouteId = (employeeId, date, ctx) => {
+  const weekDates = new Set(getWeekWorkDates(date));
+  const counts = new Map();
+  for (const s of ctx.workingSchedules) {
+    if (
+      s.route_id &&
+      s.employee_id?.toString() === employeeId.toString() &&
+      s.date !== date &&
+      weekDates.has(s.date)
+    ) {
+      const rid = s.route_id.toString();
+      counts.set(rid, (counts.get(rid) || 0) + 1);
+    }
   }
-
-  return count;
+  let best = null;
+  let bestCount = 0;
+  for (const [rid, c] of counts) {
+    if (c > bestCount) {
+      best = rid;
+      bestCount = c;
+    }
+  }
+  return best;
 };
 
-/** Seria tej samej trasy w kolejnych dniach roboczych przed `date`. */
-const countSameRouteStreakBefore = (employeeId, routeId, date, ctx) => {
-  const prefix = `${ctx.year}-${String(ctx.month).padStart(2, '0')}`;
-  const rid = routeId.toString();
-  const priorDates = ctx.workingSchedules
-    .filter(
-      (s) =>
-        s.employee_id?.toString() === employeeId.toString() &&
+/** Trasy, które kierowca jeździł w POPRZEDNIM tygodniu (bieżący miesiąc + kwartał). */
+const getEmployeeLastWeekRouteIds = (employeeId, date, ctx) => {
+  const prevMonday = shiftDateStr(getWeekMonday(date), -7);
+  const prevDates = new Set();
+  for (let i = 0; i < 6; i += 1) prevDates.add(shiftDateStr(prevMonday, i));
+  const ids = new Set();
+  const scan = (arr) => {
+    for (const s of arr || []) {
+      if (
         s.route_id &&
-        s.date < date &&
-        s.date.startsWith(prefix)
-    )
-    .map((s) => s.date)
-    .filter((d, i, arr) => arr.indexOf(d) === i)
-    .sort((a, b) => b.localeCompare(a));
-
-  let streak = 0;
-  for (const d of priorDates) {
-    const droveSame = ctx.workingSchedules.some(
-      (s) =>
         s.employee_id?.toString() === employeeId.toString() &&
-        s.date === d &&
-        s.route_id?.toString() === rid
-    );
-    if (droveSame) streak += 1;
-    else break;
-  }
-  return streak;
+        prevDates.has(s.date)
+      ) {
+        ids.add(s.route_id.toString());
+      }
+    }
+  };
+  scan(ctx.workingSchedules);
+  scan(ctx.quarterSchedules);
+  return ids;
 };
 
 /**
- * Kara za brak rotacji — nie chcemy „tej samej trasy codziennie”.
- * Im więcej powtórzeń w miesiącu/kwartale i im dłuższa seria, tym wyższy score (gorzej).
+ * Z8: rotacja TYGODNIOWA.
+ * W obrębie tygodnia trzymamy kierowcę na TEJ SAMEJ trasie (mocny bonus za zgodność,
+ * mocna kara za zmianę w środku tygodnia). Między tygodniami preferujemy zmianę trasy
+ * (lekka kara za powtórzenie trasy z zeszłego tygodnia).
  */
 const getRouteRotationPenalty = (employee, route, date, ctx) => {
   if (!date || !route) return 0;
 
-  const monthCount = countEmployeeRouteInMonth(employee.id, route.id, ctx);
-  const quarterCount = countEmployeeRouteInQuarter(employee.id, route.id, ctx);
-  const streak = countSameRouteStreakBefore(employee.id, route.id, date, ctx);
+  const rid = route.id.toString();
+  const weekRoute = getEmployeeWeekRouteId(employee.id, date, ctx);
 
-  let penalty = 0;
-
-  if (streak > 0) {
-    penalty += streak * 3.5;
-  }
-  if (monthCount > 0) {
-    penalty += monthCount * 1.4;
-  }
-  if (quarterCount > monthCount) {
-    penalty += (quarterCount - monthCount) * 0.45;
+  if (weekRoute) {
+    return weekRoute === rid ? -10 : 12;
   }
 
-  const prefix = `${ctx.year}-${String(ctx.month).padStart(2, '0')}`;
-  const monthRouteIds = new Set(
-    ctx.workingSchedules
-      .filter(
-        (s) =>
-          s.employee_id?.toString() === employee.id.toString() &&
-          s.route_id &&
-          s.date?.startsWith(prefix)
-      )
-      .map((s) => s.route_id.toString())
-  );
-  if (monthCount === 0 && monthRouteIds.size > 0) {
-    penalty -= 1.1;
-  }
-
-  return penalty;
+  const lastWeek = getEmployeeLastWeekRouteIds(employee.id, date, ctx);
+  return lastWeek.has(rid) ? 2.5 : 0;
 };
 
 const scoreRouteForEmployeeHours = (employee, route, ctx, options = {}) => {
@@ -1990,6 +1996,29 @@ const fillAllOperatingRouteSlots = (ctx) => {
   }
 };
 
+/**
+ * Z7/Z9: twarde domknięcie. Dla każdego dnia (pn–sb) każda nieobsadzona trasa
+ * OBOWIĄZKOWA dostaje kierowcę, o ile jest ktokolwiek uprawniony i wolny —
+ * kolejność: najtrudniejsze (C+SP → C → B+SP) przed prostymi B. Godziny schodzą
+ * na drugi plan (forceCoverage), bo pusta obowiązkowa trasa jest gorsza niż nadgodziny.
+ */
+const ensureMandatoryRoutesCovered = (ctx) => {
+  for (const date of listNonSundayDates(ctx.month, ctx.year)) {
+    const openRoutes = sortOpenRoutesForFill(ctx.routes, date, ctx).filter(
+      routeRequiresStaffing
+    );
+
+    for (const route of openRoutes) {
+      if (findRouteAssignment(date, route.id, ctx.workingSchedules)) continue;
+
+      const emp = findBestEmployeeForRouteOnDay(route, date, ctx, { forceCoverage: true });
+      if (emp && assignRouteToEmployee(emp, route, date, ctx)) continue;
+
+      tryCapabilitySwapForRoute(route, date, ctx);
+    }
+  }
+};
+
 /** Trasy (obiekty) przypisane pracownikowi danego dnia. */
 const getEmployeeRoutesOnDay = (employeeId, date, ctx) =>
   ctx.workingSchedules
@@ -2263,6 +2292,7 @@ function generateAutoFillAssignments({
   }
 
   ensureSaturdayRoutesFilled(ctx);
+  ensureMandatoryRoutesCovered(ctx);
   mergeExtraDw5Labels(ctx, user_id, routes);
 
   let syncPasses = 0;
@@ -2273,6 +2303,7 @@ function generateAutoFillAssignments({
     fillRemainingEmptyEmployeeDays(ctx);
     fillSaturdayRoutes(ctx);
     ensureSaturdayRoutesFilled(ctx);
+    ensureMandatoryRoutesCovered(ctx);
     mergeExtraDw5Labels(ctx, user_id, routes);
     finalSync = syncWorkingSchedulesToPersistable(ctx, baselineSchedules, routes);
     syncPasses = pass;
@@ -2297,71 +2328,8 @@ function generateAutoFillAssignments({
   };
 }
 
-/**
- * Uzupełnienie luk po zapisie do bazy — tylko puste dni + deficyt godzin.
- */
-function generateGapFillOnly({
-  employees,
-  routes,
-  schedules,
-  quarterSchedules = [],
-  month,
-  year,
-  user_id,
-}) {
-  const baselineSchedules = schedules.map((s) => ({ ...s }));
-  const workingSchedules = baselineSchedules.map((s) => ({ ...s }));
-  const manualSchedules = baselineSchedules.filter((s) => !s.auto_filled);
-  const { initialEmployeeDays, initialRouteSlots } = buildInitialSnapshot(manualSchedules);
-
-  const ctx = {
-    employees: sortEmployeesForFillOrder(employees),
-    routes,
-    workingSchedules,
-    persistSim: baselineSchedules.map((s) => ({ ...s })),
-    quarterSchedules: quarterSchedules.map((s) => ({ ...s })),
-    assignments: [],
-    labelAssignments: [],
-    initialEmployeeDays,
-    initialRouteSlots,
-    month,
-    year,
-    user_id,
-  };
-
-  for (let pass = 0; pass < 15; pass++) {
-    let any = false;
-    const before = ctx.assignments.length;
-    fillRemainingEmptyEmployeeDays(ctx);
-    fillUnderHourEmployeeGaps(ctx);
-    fillRemainingEmptyEmployeeDays(ctx);
-    fillSaturdayRoutes(ctx);
-    if (ctx.assignments.length > before) {
-      any = true;
-    }
-    if (!any) break;
-  }
-
-  ensureSaturdayRoutesFilled(ctx);
-  mergeExtraDw5Labels(ctx, user_id, routes);
-
-  let finalSync = syncWorkingSchedulesToPersistable(ctx, baselineSchedules, routes);
-  for (let pass = 1; pass < 15 && finalSync.pruned; pass++) {
-    fillRemainingEmptyEmployeeDays(ctx);
-    fillUnderHourEmployeeGaps(ctx);
-    fillRemainingEmptyEmployeeDays(ctx);
-    fillSaturdayRoutes(ctx);
-    ensureSaturdayRoutesFilled(ctx);
-    mergeExtraDw5Labels(ctx, user_id, routes);
-    finalSync = syncWorkingSchedulesToPersistable(ctx, baselineSchedules, routes);
-  }
-
-  return { routeAssignments: finalSync.kept };
-}
-
 module.exports = {
   generateAutoFillAssignments,
-  generateGapFillOnly,
   collectNewRouteProposals,
   filterPersistableAssignments,
   buildLockedRouteSlots,

@@ -10,6 +10,10 @@ const { getQuarterMonths } = require('../utils/scheduleHours');
 const { persistRouteProposals, persistLabelProposals } = require('../utils/schedulePersist');
 const { isSaturday } = require('../utils/scheduleRules');
 
+// Podbijaj przy każdej istotnej zmianie algorytmu — dzięki temu w logu widać,
+// że działa świeża wersja, a nie zbuforowany stary run.
+const AUTOFILL_ALGORITHM_VERSION = 'v2026.07.01-tygodniowa-rotacja+dw5-fallback';
+
 const parseWorkingHours = (wh) => {
   if (!wh) return null;
   if (typeof wh === 'object') return wh;
@@ -144,7 +148,17 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
   const proposedRoutes = algorithmDebug?.proposedRoutes ?? routeAssignments.length;
   const rejectedRoutes = algorithmDebug?.rejectedRoutes ?? 0;
 
+  const runTimestamp = new Date().toISOString();
+  const versionHeader = [
+    '==================================================',
+    `AUTO-FILL — wersja: ${AUTOFILL_ALGORITHM_VERSION}`,
+    `Run: ${runTimestamp} | miasto #${cityId} | ${monthNum}/${yearNum}`,
+    '==================================================',
+  ];
+
   const debug = {
+    version: AUTOFILL_ALGORITHM_VERSION,
+    runTimestamp,
     proposedRoutes,
     proposedLabels: labelAssignments.length,
     persistableRoutes: persistableRoutes.length,
@@ -159,6 +173,8 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
     afterPersist,
     persistSkipped,
     logs: [
+      ...versionHeader,
+      '',
       ...(algorithmDebug?.afterAlgorithm?.logs || []),
       '',
       '--- Zapis do bazy ---',

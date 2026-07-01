@@ -31,6 +31,18 @@ const listWeekdaysInMonth = (month, year) => {
   return dates;
 };
 
+/** Wszystkie dni miesiąca poza niedzielami (pn–sb). */
+const listNonSundayDates = (month, year) => {
+  const dim = new Date(year, month, 0).getDate();
+  const dates = [];
+  for (let d = 1; d <= dim; d++) {
+    const date = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const wd = new Date(`${date}T12:00:00`).getDay();
+    if (wd !== 0) dates.push(date);
+  }
+  return dates;
+};
+
 const employeeDisplayName = (employee) => {
   if (!employee) return '?';
   const name = `${employee.last_name || ''} ${employee.first_name || ''}`.trim();
@@ -284,6 +296,28 @@ const buildScheduleGapReport = ({
     }
   }
 
+  // Nieobsadzone trasy dla KAŻDEGO dnia osobno (pn–sb) — nazwy tras bez kierowcy.
+  const unstaffedByDate = [];
+  logs.push('');
+  logs.push('--- Nieobsadzone trasy wg dni (pn–sb) ---');
+  for (const date of listNonSundayDates(month, year)) {
+    const dayNum = parseInt(date.split('-')[2], 10);
+    const emptyRoutes = routes
+      .filter((r) => isRouteOperatingOnDate(r, date))
+      .filter((r) => !findRouteAssignment(date, r.id, schedules))
+      .map((r) => r.name);
+
+    unstaffedByDate.push({ date, day: dayNum, routes: emptyRoutes });
+
+    if (emptyRoutes.length === 0) {
+      logs.push(`${date} (dz.${dayNum}): wszystkie trasy obsadzone`);
+    } else {
+      logs.push(
+        `${date} (dz.${dayNum}): ${emptyRoutes.length} nieobsadzonych → ${emptyRoutes.join(' | ')}`
+      );
+    }
+  }
+
   const emptyWithRoutes = emptyCells.filter((c) => !c.locked && c.assignableRouteCount > 0);
 
   logs.push('');
@@ -305,6 +339,7 @@ const buildScheduleGapReport = ({
     emptyCells,
     openRouteSlots,
     underHourEmployees,
+    unstaffedByDate,
   };
 };
 
