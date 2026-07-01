@@ -34,6 +34,7 @@ const {
   getQuarterMonths,
   routesTimeOverlap,
 } = require('./scheduleHours');
+const { buildAutoFillAlgorithmReport } = require('./scheduleAutoFillDebug');
 
 const daysInMonth = (month, year) => new Date(year, month, 0).getDate();
 
@@ -1668,7 +1669,15 @@ function generateAutoFillAssignments({
     return true;
   });
 
-  return { routeAssignments: ctx.assignments, labelAssignments };
+  return {
+    routeAssignments: ctx.assignments,
+    labelAssignments,
+    debug: {
+      afterAlgorithm: buildAutoFillAlgorithmReport(ctx),
+      proposedRoutes: ctx.assignments.length,
+      proposedLabels: labelAssignments.length,
+    },
+  };
 }
 
 module.exports = {

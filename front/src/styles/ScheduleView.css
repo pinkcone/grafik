@@ -176,3 +176,56 @@
 .schedule-month-nav__today:active {
   transform: scale(0.97);
 }
+
+.auto-fill-debug {
+  margin: 12px 0 16px;
+  border: 1px solid #c9a227;
+  border-radius: 8px;
+  background: #fffdf5;
+  font-size: 0.82rem;
+}
+
+.auto-fill-debug__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e8d9a8;
+  background: #fff8e6;
+}
+
+.auto-fill-debug__stats {
+  flex: 1;
+  color: #5c4a12;
+  font-size: 0.78rem;
+}
+
+.auto-fill-debug__toggle,
+.auto-fill-debug__close {
+  padding: 4px 10px;
+  border: 1px solid #c9a227;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+.auto-fill-debug__close {
+  font-size: 1rem;
+  line-height: 1;
+  padding: 2px 8px;
+}
+
+.auto-fill-debug__log {
+  margin: 0;
+  padding: 12px;
+  max-height: 320px;
+  overflow: auto;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #2a2410;
+}

@@ -69,6 +69,9 @@ function ScheduleView({ cityId }) {
   const [assignMonthRouteId, setAssignMonthRouteId] = useState('');
   const [assignMonthLoading, setAssignMonthLoading] = useState(false);
 
+  const [autoFillDebug, setAutoFillDebug] = useState(null);
+  const [autoFillDebugOpen, setAutoFillDebugOpen] = useState(true);
+
   const [quarterSchedules, setQuarterSchedules] = useState({});
 
   const fetchQuarterSchedules = async () => {
@@ -791,6 +794,17 @@ const handleExportCSV = () => {
       if (!res.ok) {
         throw new Error(data.message || `HTTP ${res.status}`);
       }
+
+      if (data.debug) {
+        setAutoFillDebug(data.debug);
+        setAutoFillDebugOpen(true);
+        console.group('[Auto-fill] Diagnostyka');
+        console.log('Podsumowanie po zapisie:', data.debug.afterPersist?.summary);
+        console.log('Pominięte zapisy:', data.debug.persistSkipped);
+        (data.debug.logs || []).forEach((line) => console.log(line));
+        console.groupEnd();
+      }
+
       alert(data.message || `Uzupełniono ${data.created || 0} przypisań.`);
       await fetchSchedule();
       await fetchQuarterSchedules();
@@ -1105,6 +1119,48 @@ const prepareRoutesSheet = () => {
           Wyczyść trasy miesiąca
         </button>
       </div>
+
+      {autoFillDebug && (
+        <div className="auto-fill-debug">
+          <div className="auto-fill-debug__header">
+            <strong>Log auto-uzupełniania</strong>
+            {autoFillDebug.afterPersist?.summary && (
+              <span className="auto-fill-debug__stats">
+                Puste dni: {autoFillDebug.afterPersist.summary.emptyEmployeeDays}
+                {' · '}
+                z trasami w dropdownie: {autoFillDebug.afterPersist.summary.emptyWithAssignableRoutes}
+                {' · '}
+                wolne trasy: {autoFillDebug.afterPersist.summary.openRouteSlots}
+                {' · '}
+                deficyt godzin: {autoFillDebug.afterPersist.summary.underHourEmployees}
+                {autoFillDebug.persistSkippedCount > 0 && (
+                  <> · pominięte zapisy: {autoFillDebug.persistSkippedCount}</>
+                )}
+              </span>
+            )}
+            <button
+              type="button"
+              className="auto-fill-debug__toggle"
+              onClick={() => setAutoFillDebugOpen((v) => !v)}
+            >
+              {autoFillDebugOpen ? 'Zwiń' : 'Rozwiń'}
+            </button>
+            <button
+              type="button"
+              className="auto-fill-debug__close"
+              onClick={() => setAutoFillDebug(null)}
+              title="Zamknij log"
+            >
+              ×
+            </button>
+          </div>
+          {autoFillDebugOpen && (
+            <pre className="auto-fill-debug__log">
+              {(autoFillDebug.logs || []).join('\n')}
+            </pre>
+          )}
+        </div>
+      )}
 
       <Popup isOpen={assignMonthOpen} onClose={() => !assignMonthLoading && setAssignMonthOpen(false)}>
         <h3>Przypisz na cały miesiąc</h3>
