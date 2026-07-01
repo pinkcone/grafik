@@ -2,8 +2,11 @@ import { hasEmployeeLabelOnDay } from './scheduleLabels';
 
 export const MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY = 2;
 
-export const getMaxRouteSlotsPerDay = (licenseCategory) =>
-  licenseCategory === 'C' ? 1 : MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY;
+/** Tymczasowo wyłączone — tylko 1 trasa (para liczy się jako 1 slot). */
+export const ENABLE_ROUTE_STACKING = false;
+
+export const getMaxRouteSlotsPerDay = () =>
+  ENABLE_ROUTE_STACKING ? MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY : 1;
 
 export const getPairRouteIdsIncludingSelf = (routeId, routes) => {
   const idStr = routeId.toString();
@@ -81,7 +84,7 @@ export const canEmployeeHaveAnotherRouteOnDay = (
 
   if (slotCount >= maxSlots) return false;
 
-  if (allowStackedRoute) {
+  if (allowStackedRoute && ENABLE_ROUTE_STACKING) {
     return false;
   }
 

@@ -21,8 +21,10 @@ const {
 } = require('./scheduleRules');
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 const {
+  ENABLE_ROUTE_STACKING,
   MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY,
   getEmployeeRouteSlotCountOnDay,
+  getMaxRouteSlotsPerDay,
   canEmployeeHaveAnotherRouteOnDay,
   canPersistRouteAssignment,
 } = require('./scheduleConstraints');
@@ -284,7 +286,8 @@ const pushAssignment = (ctx, { date, route_id, employee_id }, options = {}) => {
         ctx.routes,
         { ...slotOpts, allowPairLeg: true }
       )) ||
-    (allowStackedRoute &&
+    (ENABLE_ROUTE_STACKING &&
+      allowStackedRoute &&
       canEmployeeHaveAnotherRouteOnDay(
         employee_id,
         route_id,
@@ -1641,6 +1644,7 @@ const wouldOverlapEmployeeDay = (employeeId, route, date, ctx) => {
  * uprawnienia pasują (pomijamy tylko blokadę „druga trasa").
  */
 const canStackRouteOnEmployee = (employee, route, date, ctx) => {
+  if (!ENABLE_ROUTE_STACKING) return false;
   if (!employee || !route) return false;
   if (employee.license_category === 'C') return false;
   if (hasEmployeesNeedingFirstRouteOnDay(date, ctx)) return false;
@@ -1653,7 +1657,7 @@ const canStackRouteOnEmployee = (employee, route, date, ctx) => {
     ctx.routes
   );
   if (slotCount === 0) return false;
-  if (slotCount >= MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY) return false;
+  if (slotCount >= getMaxRouteSlotsPerDay()) return false;
   if (!isRouteOperatingOnDate(route, date)) return false;
   if (findRouteAssignment(date, route.id, ctx.workingSchedules)) return false;
   if (wouldOverlapEmployeeDay(employee.id, route, date, ctx)) return false;
@@ -1725,6 +1729,7 @@ const assignStackedRoute = (employee, route, date, ctx) => {
  * dokładamy max jedną dodatkową trasę (2. slot) osobom z nienakładającymi się godzinami.
  */
 const combineLeftoverRoutes = (ctx) => {
+  if (!ENABLE_ROUTE_STACKING) return;
   for (const date of listWeekdaysInMonth(ctx.month, ctx.year)) {
     if (hasEmployeesNeedingFirstRouteOnDay(date, ctx)) continue;
 
@@ -1773,8 +1778,7 @@ const combineLeftoverRoutes = (ctx) => {
  * 3. Bilans godzin kierowca po kierowcy (na pustych dniach)
  * 4. Wypełnienie wszystkich tras kursujących w dniu + finalizacja (każdy ma min. 1 trasę)
  * 5. Ostatnie przejście — puste dni pracowników + wolne trasy (każdy po 1 trasie)
- * 6. Łączenie: dopiero wtedy max 2. trasa, jeśli ktoś nadal bez pierwszej — blokada
- * 7. Wyrównanie godzin (zamiany w obrębie dnia)
+ * 6. Wyrównanie godzin (zamiany w obrębie dnia) — bez łączenia tras (1 trasa/dzień)
  * 8. DW5 (jeden na tydzień po sobocie)
  *
  * Godziny: dobór tras pod miesiąc ORAZ kwartał kalendarzowy (I–III, IV–VI…);
@@ -1828,8 +1832,8 @@ function generateAutoFillAssignments({
   fillAllOperatingRouteSlots(ctx);
   fillRemainingEmptyEmployeeDays(ctx);
 
-  // Faza 2 — łączenie: tylko gdy wszyscy mają 1. trasę; max 2 sloty na kierowcę/dzień
-  combineLeftoverRoutes(ctx);
+  // Łączenie tras (2. slot) — wyłączone: najpierw każdy dostaje 1 trasę
+  // combineLeftoverRoutes(ctx);
 
   rebalanceHoursOnWeekdays(ctx);
   ensureWeekdayCoverage(ctx);

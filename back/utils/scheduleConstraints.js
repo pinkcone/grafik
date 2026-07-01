@@ -1,11 +1,14 @@
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 const { routesTimeOverlap } = require('./scheduleHours');
 
-/** Maks. liczba niezależnych tras (para = 1 slot) u kierowcy B w dniu. */
+/** Maks. slotów tras (para = 1) u kierowcy B — używane gdy włączone łączenie. */
 const MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY = 2;
 
-const getMaxRouteSlotsPerDay = (licenseCategory) =>
-  licenseCategory === 'C' ? 1 : MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY;
+/** Tymczasowo wyłączone: druga niezależna trasa tego samego dnia. */
+const ENABLE_ROUTE_STACKING = false;
+
+const getMaxRouteSlotsPerDay = () =>
+  ENABLE_ROUTE_STACKING ? MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY : 1;
 
 const getPairRouteIdsIncludingSelf = (routeId, routes) => {
   const idStr = routeId.toString();
@@ -127,20 +130,26 @@ const canPersistRouteAssignment = (
   { licenseCategory = null } = {}
 ) => {
   const base = { licenseCategory };
-  return (
-    canEmployeeHaveAnotherRouteOnDay(employeeId, routeId, date, schedules, routes, base) ||
+  const checks = [
+    canEmployeeHaveAnotherRouteOnDay(employeeId, routeId, date, schedules, routes, base),
     canEmployeeHaveAnotherRouteOnDay(employeeId, routeId, date, schedules, routes, {
       ...base,
       allowPairLeg: true,
-    }) ||
-    canEmployeeHaveAnotherRouteOnDay(employeeId, routeId, date, schedules, routes, {
-      ...base,
-      allowStackedRoute: true,
-    })
-  );
+    }),
+  ];
+  if (ENABLE_ROUTE_STACKING) {
+    checks.push(
+      canEmployeeHaveAnotherRouteOnDay(employeeId, routeId, date, schedules, routes, {
+        ...base,
+        allowStackedRoute: true,
+      })
+    );
+  }
+  return checks.some(Boolean);
 };
 
 module.exports = {
+  ENABLE_ROUTE_STACKING,
   MAX_EMPLOYEE_ROUTE_SLOTS_PER_DAY,
   getMaxRouteSlotsPerDay,
   getPairRouteIdsIncludingSelf,
