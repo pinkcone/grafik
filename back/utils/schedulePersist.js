@@ -113,33 +113,33 @@ const persistRouteProposals = async (proposals, user_id, { autoFilled = false } 
 const persistLabelProposals = async (proposals, user_id, { autoFilled = false } = {}) => {
   const created = [];
   for (const item of proposals) {
-    const existing = await Schedule.findOne({
+    const dayEntries = await Schedule.findAll({
       where: { date: item.date, employee_id: item.employee_id },
     });
-    if (existing?.label === item.label) continue;
-    if (existing?.label) continue;
+    const daySchedules = dayEntries.map((s) => (s.toJSON ? s.toJSON() : s));
 
-    if (existing) {
-      await existing.update({
-        label: item.label,
-        route_id: null,
-        assignment_type: 'label',
-        user_id: item.user_id || user_id,
-        auto_filled: autoFilled,
-      });
-      created.push(existing);
-    } else {
-      const row = await Schedule.create({
-        date: item.date,
-        employee_id: item.employee_id,
-        route_id: null,
-        label: item.label,
-        assignment_type: 'label',
-        user_id: item.user_id || user_id,
-        auto_filled: autoFilled,
-      });
-      created.push(row);
+    if (hasEmployeeLabelOnDay(item.employee_id, item.date, daySchedules)) {
+      continue;
     }
+
+    const existingLabelRow = dayEntries.find(
+      (s) => s.label != null && String(s.label).trim() !== ''
+    );
+    if (existingLabelRow) {
+      if (existingLabelRow.label === item.label) continue;
+      continue;
+    }
+
+    const row = await Schedule.create({
+      date: item.date,
+      employee_id: item.employee_id,
+      route_id: null,
+      label: item.label,
+      assignment_type: 'label',
+      user_id: item.user_id || user_id,
+      auto_filled: autoFilled,
+    });
+    created.push(row);
   }
   return created;
 };

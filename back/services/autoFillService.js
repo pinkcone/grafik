@@ -3,7 +3,6 @@ const { Op } = require('sequelize');
 const { attachOperatingDays } = require('../utils/routeDayHelpers');
 const {
   generateAutoFillAssignments,
-  filterPersistableAssignments,
   hasMeaningfulAssignment,
 } = require('../utils/scheduleAutoFill');
 const { buildScheduleGapReport } = require('../utils/scheduleAutoFillDebug');
@@ -58,13 +57,6 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
         [Op.or]: [{ label: null }, { label: '' }],
       },
     });
-    await Schedule.destroy({
-      where: {
-        date: { [Op.between]: [startDate, endDate] },
-        employee_id: { [Op.in]: employeeIds },
-        auto_filled: true,
-      },
-    });
   }
 
   const [routesRaw, schedules, quarterSchedulesRaw] = await Promise.all([
@@ -102,13 +94,10 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
     });
 
   const persistSkipped = [];
-  const { kept: persistableRoutes, rejected } = filterPersistableAssignments(
-    routeAssignments,
-    baselineSchedules,
-    activeRoutes,
-    employees
-  );
-  pushFilterRejections(rejected, persistSkipped);
+  const persistableRoutes = routeAssignments;
+  if (algorithmDebug?.persistRejected?.length) {
+    pushFilterRejections(algorithmDebug.persistRejected, persistSkipped);
+  }
 
   let created = [];
   let labelsCreated = [];
@@ -151,15 +140,21 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
   );
 
   const gapFillPasses = algorithmDebug?.gapFillPasses ?? 0;
+  const syncPasses = algorithmDebug?.syncPasses ?? 0;
+  const proposedRoutes = algorithmDebug?.proposedRoutes ?? routeAssignments.length;
+  const rejectedRoutes = algorithmDebug?.rejectedRoutes ?? 0;
 
   const debug = {
-    proposedRoutes: routeAssignments.length,
+    proposedRoutes,
     proposedLabels: labelAssignments.length,
     persistableRoutes: persistableRoutes.length,
+    rejectedRoutes,
+    rejectedByReason: algorithmDebug?.rejectedByReason || {},
     createdRoutes: created.length,
     createdLabels: labelsCreated.length,
     persistSkippedCount: persistSkipped.length,
     gapFillPasses,
+    syncPasses,
     afterAlgorithm: algorithmDebug?.afterAlgorithm || null,
     afterPersist,
     persistSkipped,
@@ -167,10 +162,18 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
       ...(algorithmDebug?.afterAlgorithm?.logs || []),
       '',
       '--- Zapis do bazy ---',
-      'Wersja: cały grafik w pamięci, jeden zapis na końcu',
-      `Zaproponowano tras: ${routeAssignments.length} (w tym soboty: ${routeAssignments.filter((r) => isSaturday(r.date)).length})`,
-      `Do zapisu po filtrze: ${persistableRoutes.length}`,
-      `Domykanie luk w pamięci: ${gapFillPasses} przejść`,
+      'Wersja: cały grafik w pamięci, jeden zapis na końcu (stan pamięci = stan zapisu)',
+      `Zaproponowano tras: ${proposedRoutes} (w tym soboty: ${routeAssignments.filter((r) => isSaturday(r.date)).length})`,
+      `Do zapisu po filtrze: ${persistableRoutes.length} (odrzucono w pamięci: ${rejectedRoutes})`,
+      `Domykanie luk w pamięci: ${gapFillPasses} przejść, synchronizacja: ${syncPasses}`,
+      ...(Object.keys(algorithmDebug?.rejectedByReason || {}).length > 0
+        ? [
+            'Odrzucone propozycje (przed przycięciem pamięci):',
+            ...Object.entries(algorithmDebug.rejectedByReason).map(
+              ([reason, count]) => `  - ${reason}: ${count}`
+            ),
+          ]
+        : []),
       `Zapisano tras: ${created.length}, pominięto: ${persistSkipped.length}`,
       ...persistLogs,
       '',

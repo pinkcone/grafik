@@ -18,6 +18,10 @@ const {
   getDw5CandidateWeekdays,
   DW5_LABEL_CODE,
   getSaturdayDw5BlockReason,
+  pickDw5DateWithFallback,
+  listDw5CandidateDatesForEmployee,
+  buildDw5LabelProposal,
+  buildDw5ScheduleEntry,
 } = require('./scheduleRules');
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 const {
@@ -87,7 +91,7 @@ const isEmployeeDayMutable = (employeeId, date, initialEmployeeDays) =>
 
 const isEmployeeDayFreeForRoute = (employeeId, date, ctx) => {
   if (!isEmployeeDayMutable(employeeId, date, ctx.initialEmployeeDays)) return false;
-  if (hasEmployeeLabelOnDay(employeeId, date, ctx.workingSchedules)) return false;
+  if (hasPendingOrPersistedLabelOnDay(ctx, employeeId, date)) return false;
   return getEmployeeRouteSlotCountOnDay(employeeId, date, ctx.workingSchedules, ctx.routes) === 0;
 };
 
@@ -184,7 +188,10 @@ const canEmployeeTakeRouteOnDay = (
       schedules,
       routes,
       options.employeeCount,
-      { initialEmployeeDays: options.initialEmployeeDays }
+      {
+        initialEmployeeDays: options.initialEmployeeDays,
+        relaxedDw5: options.relaxedDw5,
+      }
     );
     if (dw5Reason) return false;
   }
@@ -193,25 +200,10 @@ const canEmployeeTakeRouteOnDay = (
 };
 
 const pushDw5Package = (ctx, employeeId, saturdayDate) => {
-  // Tylko JEDEN DW5 na tydzień po danej sobocie.
   if (hasDw5AfterSaturday(employeeId, saturdayDate, ctx.workingSchedules)) {
     return true;
   }
-
-  const pkg = planSaturdayDw5Package(
-    saturdayDate,
-    employeeId,
-    ctx.workingSchedules,
-    ctx.routes,
-    ctx.employees.length,
-    ctx.user_id,
-    { initialEmployeeDays: ctx.initialEmployeeDays }
-  );
-  if (!pkg) return false;
-
-  ctx.labelAssignments.push(pkg.labelProposal);
-  ctx.workingSchedules.push(pkg.scheduleEntry);
-  return true;
+  return forceDw5ForSaturday(ctx, employeeId, saturdayDate);
 };
 
 /** Usuwa DW5 dodany przez algorytm po danej sobocie (gdy znika ostatnia trasa sobotnia tego tygodnia). */
@@ -244,6 +236,17 @@ const removeDw5AfterSaturday = (ctx, employeeId, saturdayDate) => {
         candidateDays.has(l.date)
       )
   );
+  if (ctx.persistSim) {
+    ctx.persistSim = ctx.persistSim.filter(
+      (s) =>
+        !(
+          s.employee_id?.toString() === employeeId.toString() &&
+          s.label === DW5_LABEL_CODE &&
+          candidateDays.has(s.date) &&
+          !isInitial(s.date)
+        )
+    );
+  }
 };
 
 const getEmployeeLicenseCategory = (employeeId, employees) => {
@@ -251,7 +254,295 @@ const getEmployeeLicenseCategory = (employeeId, employees) => {
   return emp?.license_category ?? null;
 };
 
+/** Czy propozycja trasy przejdzie filtr zapisu (baseline + już zaakceptowane w persistSim). */
+const wouldPersistRouteProposal = (ctx, { date, route_id, employee_id }) => {
+  const sim = ctx.persistSim || ctx.workingSchedules;
+  const existing = findRouteAssignment(date, route_id, sim);
+  if (existing) {
+    return existing.employee_id?.toString() === employee_id?.toString();
+  }
+  if (hasPendingOrPersistedLabelOnDay(ctx, employee_id, date)) {
+    return false;
+  }
+  return canPersistRouteAssignment(
+    employee_id,
+    route_id,
+    date,
+    sim,
+    ctx.routes,
+    { licenseCategory: getEmployeeLicenseCategory(employee_id, ctx.employees) }
+  );
+};
+
+const pushPersistSimRoute = (ctx, { date, route_id, employee_id }) => {
+  if (!ctx.persistSim) return;
+  ctx.persistSim.push({
+    date,
+    route_id,
+    employee_id,
+    label: null,
+    auto_filled: true,
+  });
+};
+
+const pushPersistSimLabel = (ctx, labelProposal) => {
+  if (!ctx.persistSim) return;
+  ctx.persistSim.push({
+    date: labelProposal.date,
+    employee_id: labelProposal.employee_id,
+    label: labelProposal.label,
+    route_id: null,
+    auto_filled: true,
+  });
+};
+
+const removePersistSimRouteSlot = (ctx, date, routeId) => {
+  if (!ctx.persistSim) return;
+  if (ctx.initialRouteSlots.has(routeSlotKey(date, routeId))) return;
+  ctx.persistSim = ctx.persistSim.filter(
+    (s) => !(s.date === date && s.route_id?.toString() === routeId.toString())
+  );
+};
+
+const groupRejectionsByReason = (rejected) => {
+  const counts = {};
+  for (const r of rejected) {
+    const key = r.reason || 'Nieznany powód';
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return counts;
+};
+
+const mergeExtraDw5Labels = (ctx, user_id, routes) => {
+  const extraLabels = generateDw5Proposals(
+    ctx.workingSchedules,
+    user_id,
+    routes,
+    ctx.employees.length
+  );
+  const seen = new Set(
+    ctx.labelAssignments.map((l) => `${l.employee_id}|${l.date}|${l.label}`)
+  );
+  const sim = ctx.persistSim || ctx.workingSchedules;
+
+  for (const l of extraLabels) {
+    const key = `${l.employee_id}|${l.date}|${l.label}`;
+    if (seen.has(key)) continue;
+    if (hasEmployeeLabelOnDay(l.employee_id, l.date, sim)) continue;
+    const hasRoute = sim.some(
+      (s) =>
+        s.employee_id?.toString() === l.employee_id?.toString() &&
+        s.date === l.date &&
+        s.route_id
+    );
+    if (hasRoute) continue;
+    if (!isEmployeeDayMutable(l.employee_id, l.date, ctx.initialEmployeeDays)) continue;
+
+    seen.add(key);
+    ctx.labelAssignments.push(l);
+    ctx.workingSchedules.push({
+      date: l.date,
+      employee_id: l.employee_id,
+      label: l.label,
+      route_id: null,
+      user_id,
+      auto_filled: true,
+    });
+    pushPersistSimLabel(ctx, l);
+  }
+};
+
+const hasPendingOrPersistedLabelOnDay = (ctx, employeeId, date) => {
+  const sim = ctx.persistSim || ctx.workingSchedules;
+  if (hasEmployeeLabelOnDay(employeeId, date, sim)) return true;
+  return (ctx.labelAssignments || []).some(
+    (l) =>
+      l.employee_id?.toString() === employeeId?.toString() &&
+      l.date === date &&
+      l.label != null &&
+      String(l.label).trim() !== ''
+  );
+};
+
+const snapshotCtx = (ctx) => ({
+  workingSchedules: ctx.workingSchedules.map((s) => ({ ...s })),
+  assignments: ctx.assignments.map((a) => ({ ...a })),
+  labelAssignments: ctx.labelAssignments.map((l) => ({ ...l })),
+  persistSim: ctx.persistSim ? ctx.persistSim.map((s) => ({ ...s })) : null,
+});
+
+const restoreCtx = (ctx, snap) => {
+  ctx.workingSchedules = snap.workingSchedules;
+  ctx.assignments = snap.assignments;
+  ctx.labelAssignments = snap.labelAssignments;
+  if (snap.persistSim) ctx.persistSim = snap.persistSim;
+};
+
+const clearEmployeeAutoRoutesOnDay = (ctx, employeeId, date) => {
+  const entries = ctx.workingSchedules.filter(
+    (s) =>
+      s.employee_id?.toString() === employeeId.toString() &&
+      s.date === date &&
+      s.route_id
+  );
+  for (const entry of entries) {
+    removeRouteSlot(date, entry.route_id, ctx);
+  }
+};
+
+const pushDw5LabelOnDate = (ctx, employeeId, dw5Date) => {
+  if (!isEmployeeDayMutable(employeeId, dw5Date, ctx.initialEmployeeDays)) return false;
+  if (hasPendingOrPersistedLabelOnDay(ctx, employeeId, dw5Date)) return true;
+
+  const labelKey = `${employeeId}|${dw5Date}|${DW5_LABEL_CODE}`;
+  if (
+    ctx.labelAssignments.some(
+      (l) => `${l.employee_id}|${l.date}|${l.label}` === labelKey
+    )
+  ) {
+    return true;
+  }
+
+  const labelProposal = buildDw5LabelProposal(dw5Date, employeeId, ctx.user_id);
+  ctx.labelAssignments.push(labelProposal);
+  ctx.workingSchedules.push(buildDw5ScheduleEntry(dw5Date, employeeId, ctx.user_id));
+  pushPersistSimLabel(ctx, labelProposal);
+  return true;
+};
+
+/** DW5 po sobocie — 5 kandydatów, z fallbackiem (bez blokady „obsadzalności dnia”). */
+const forceDw5ForSaturday = (ctx, employeeId, saturdayDate) => {
+  if (hasDw5AfterSaturday(employeeId, saturdayDate, ctx.workingSchedules)) {
+    return true;
+  }
+
+  const dw5Opts = { initialEmployeeDays: ctx.initialEmployeeDays };
+  let dw5Date = pickDw5DateWithFallback(
+    saturdayDate,
+    employeeId,
+    ctx.workingSchedules,
+    ctx.routes,
+    ctx.employees.length,
+    dw5Opts
+  );
+
+  if (!dw5Date) {
+    for (const date of listDw5CandidateDatesForEmployee(
+      saturdayDate,
+      employeeId,
+      ctx.initialEmployeeDays
+    )) {
+      if (hasEmployeeLabelOnDay(employeeId, date, ctx.workingSchedules)) continue;
+      clearEmployeeAutoRoutesOnDay(ctx, employeeId, date);
+      if (
+        getEmployeeRouteSlotCountOnDay(employeeId, date, ctx.workingSchedules, ctx.routes) > 0
+      ) {
+        continue;
+      }
+      dw5Date = date;
+      break;
+    }
+  }
+
+  if (!dw5Date) return false;
+  return pushDw5LabelOnDate(ctx, employeeId, dw5Date);
+};
+
+const filterPersistableLabelAssignments = (labelAssignments, manualRows, keptRoutes) => {
+  const routeDayKeys = new Set(
+    keptRoutes.map((r) => `${r.date}|${r.employee_id?.toString()}`)
+  );
+  const baselineLabelKeys = new Set(
+    manualRows
+      .filter((s) => s.label != null && String(s.label).trim() !== '')
+      .map((s) => `${s.date}|${s.employee_id?.toString()}|${s.label}`)
+  );
+
+  return labelAssignments.filter((l) => {
+    const triplet = `${l.date}|${l.employee_id?.toString()}|${l.label}`;
+    if (baselineLabelKeys.has(triplet)) return false;
+    if (hasEmployeeLabelOnDay(l.employee_id, l.date, manualRows)) return false;
+    if (routeDayKeys.has(`${l.date}|${l.employee_id?.toString()}`)) return false;
+    return true;
+  });
+};
+
+/**
+ * Przycina workingSchedules do stanu faktycznie zapisywalnego (baseline + kept).
+ * Po przycięciu persistSim i assignments są zsynchronizowane z tym, co trafi do bazy.
+ */
+const syncWorkingSchedulesToPersistable = (ctx, baselineSchedules, routes) => {
+  const routeProposals = collectNewRouteProposals(
+    ctx.workingSchedules,
+    baselineSchedules,
+    ctx.user_id
+  );
+  const { kept: keptRoutes, rejected } = filterPersistableAssignments(
+    routeProposals,
+    baselineSchedules,
+    routes,
+    ctx.employees
+  );
+
+  const manualRows = baselineSchedules.map((s) => ({ ...s }));
+  const persistableLabels = filterPersistableLabelAssignments(
+    ctx.labelAssignments,
+    manualRows,
+    keptRoutes
+  );
+  const routeDayKeys = new Set(
+    persistableLabels.map((l) => `${l.date}|${l.employee_id?.toString()}`)
+  );
+  const finalRoutes = keptRoutes.filter(
+    (r) => !routeDayKeys.has(`${r.date}|${r.employee_id?.toString()}`)
+  );
+
+  const autoRows = finalRoutes.map((item) => ({
+    date: item.date,
+    route_id: item.route_id,
+    employee_id: item.employee_id,
+    label: null,
+    assignment_type: 'route',
+    user_id: ctx.user_id,
+    auto_filled: true,
+  }));
+  const labelRows = persistableLabels.map((l) => ({
+    date: l.date,
+    employee_id: l.employee_id,
+    label: l.label,
+    route_id: null,
+    user_id: ctx.user_id,
+    auto_filled: true,
+  }));
+
+  const nextSchedules = [...manualRows, ...autoRows, ...labelRows];
+  const pruned =
+    nextSchedules.length !== ctx.workingSchedules.length ||
+    finalRoutes.length !== routeProposals.length ||
+    persistableLabels.length !== ctx.labelAssignments.length;
+
+  ctx.workingSchedules = nextSchedules;
+  ctx.persistSim = nextSchedules.map((s) => ({ ...s }));
+  ctx.assignments = finalRoutes.map((item) => ({
+    date: item.date,
+    route_id: item.route_id,
+    employee_id: item.employee_id,
+  }));
+  ctx.labelAssignments = persistableLabels;
+
+  return {
+    kept: finalRoutes,
+    rejected,
+    routeProposals,
+    persistableLabels,
+    pruned,
+  };
+};
+
 const pushAssignment = (ctx, { date, route_id, employee_id }, options = {}) => {
+  if (!wouldPersistRouteProposal(ctx, { date, route_id, employee_id })) {
+    return false;
+  }
   if (findRouteAssignment(date, route_id, ctx.workingSchedules)) {
     return false;
   }
@@ -262,7 +553,7 @@ const pushAssignment = (ctx, { date, route_id, employee_id }, options = {}) => {
   ) {
     return false;
   }
-  if (hasEmployeeLabelOnDay(employee_id, date, ctx.workingSchedules)) {
+  if (hasPendingOrPersistedLabelOnDay(ctx, employee_id, date)) {
     return false;
   }
 
@@ -311,6 +602,7 @@ const pushAssignment = (ctx, { date, route_id, employee_id }, options = {}) => {
     user_id: ctx.user_id,
     auto_filled: true,
   });
+  pushPersistSimRoute(ctx, { date, route_id, employee_id });
   return true;
 };
 
@@ -419,9 +711,11 @@ const filterPersistableAssignments = (
   return { kept, rejected };
 };
 
-const routeCheckOptions = (ctx) => ({
+const routeCheckOptions = (ctx, overrides = {}) => ({
   employeeCount: ctx.employees.length,
   initialEmployeeDays: ctx.initialEmployeeDays,
+  relaxedDw5: true,
+  ...overrides,
 });
 
 /** Trasy widoczne w dropdownie dla pracownika (jak ScheduleView). */
@@ -474,19 +768,6 @@ const assignRouteToEmployee = (employee, route, date, ctx) => {
     return false;
   }
 
-  if (isSaturday(date)) {
-    const pkg = planSaturdayDw5Package(
-      date,
-      employee.id,
-      ctx.workingSchedules,
-      ctx.routes,
-      ctx.employees.length,
-      ctx.user_id,
-      { initialEmployeeDays: ctx.initialEmployeeDays }
-    );
-    if (!pkg) return false;
-  }
-
   const pairRoute = findPairRoute(route, ctx.routes);
   if (!pushAssignment(ctx, { date, route_id: route.id, employee_id: employee.id })) {
     return false;
@@ -519,7 +800,7 @@ const assignRouteToEmployee = (employee, route, date, ctx) => {
   }
 
   if (isSaturday(date)) {
-    pushDw5Package(ctx, employee.id, date);
+    forceDw5ForSaturday(ctx, employee.id, date);
   }
 
   return true;
@@ -546,6 +827,7 @@ const removeRouteSlot = (date, routeId, ctx) => {
     ctx.assignments = ctx.assignments.filter(
       (a) => !(a.date === date && a.route_id?.toString() === rid.toString())
     );
+    removePersistSimRouteSlot(ctx, date, rid);
   };
 
   removeOne(routeId);
@@ -587,6 +869,9 @@ const listSaturdaysInMonth = (month, year) =>
 /** Dni robocze + soboty (bez niedziel). */
 const listFillableDaysInMonth = (month, year) =>
   listMonthDates(month, year).filter((d) => isWeekday(d) || isSaturday(d));
+
+const listNonSundayDates = (month, year) =>
+  listMonthDates(month, year).filter((d) => getIsoWeekday(d) !== 7);
 
 const countEmployeeFreeWeekdays = (employeeId, ctx) =>
   listWeekdaysInMonth(ctx.month, ctx.year).filter((date) =>
@@ -916,50 +1201,35 @@ const findBestSwapForEmployee = (employee, ctx) => {
       const qGap = getQuarterHourGap(employee, ctx);
       const scoreAfterTake = Math.abs(gap * 0.5 + qGap * 0.5 - blockHours);
 
-      const backup = {
-        workingSchedules: ctx.workingSchedules.map((s) => ({ ...s })),
-        assignments: ctx.assignments.map((a) => ({ ...a })),
-        labelAssignments: ctx.labelAssignments.map((l) => ({ ...l })),
-      };
-
+      const snap = snapshotCtx(ctx);
       removeRouteSlot(date, route.id, ctx);
-      assignRouteToEmployee(employee, route, date, ctx);
+      const assigned = assignRouteToEmployee(employee, route, date, ctx);
 
-      let otherRecovery = null;
-      const refill = findBestEmptySlot(other, ctx);
-      if (refill) {
-        assignRouteToEmployee(other, refill.route, refill.date, ctx);
-        otherRecovery = refill;
+      let totalScore = Infinity;
+      let employeeGapAfter = gap;
+      if (assigned) {
+        employeeGapAfter = getHourGap(employee, ctx);
+        const employeeQGapAfter = getQuarterHourGap(employee, ctx);
+        const otherGapAfter = getHourGap(other, ctx);
+        const otherQGapAfter = getQuarterHourGap(other, ctx);
+        totalScore =
+          Math.abs(employeeGapAfter) * 0.5 +
+          Math.abs(employeeQGapAfter) * 0.5 +
+          (Math.abs(otherGapAfter) * 0.5 + Math.abs(otherQGapAfter) * 0.5) * 0.5 +
+          scoreAfterTake * 0.2;
       }
 
-      const otherGapAfter = getHourGap(other, ctx);
-      const otherQGapAfter = getQuarterHourGap(other, ctx);
-      const employeeGapAfter = getHourGap(employee, ctx);
-      const employeeQGapAfter = getQuarterHourGap(employee, ctx);
-      const totalScore =
-        Math.abs(employeeGapAfter) * 0.5 +
-        Math.abs(employeeQGapAfter) * 0.5 +
-        (Math.abs(otherGapAfter) * 0.5 + Math.abs(otherQGapAfter) * 0.5) * 0.8 +
-        scoreAfterTake * 0.2;
-
-      if (
-        !best ||
-        totalScore < best.totalScore ||
-        (totalScore === best.totalScore && Math.abs(employeeGapAfter) < Math.abs(best.employeeGapAfter))
-      ) {
+      if (assigned && (!best || totalScore < best.totalScore)) {
         best = {
           date,
           route,
           other,
-          otherRecovery,
           totalScore,
           employeeGapAfter,
         };
       }
 
-      ctx.workingSchedules = backup.workingSchedules;
-      ctx.assignments = backup.assignments;
-      ctx.labelAssignments = backup.labelAssignments;
+      restoreCtx(ctx, snap);
     }
   }
 
@@ -1006,10 +1276,49 @@ const fillSaturdayRoutes = (ctx) => {
 
     const freeEmployees = sortFreeEmployeesForCoverage(ctx.employees, date, ctx);
     for (const emp of freeEmployees) {
-      if (!isEmployeeWeekdayEmpty(emp.id, date, ctx)) continue;
+      if (getEmployeeRouteSlotCountOnDay(emp.id, date, ctx.workingSchedules, ctx.routes) > 0) {
+        continue;
+      }
+      if (!isEmployeeDayMutable(emp.id, date, ctx.initialEmployeeDays)) continue;
+      if (hasPendingOrPersistedLabelOnDay(ctx, emp.id, date)) continue;
       const route = findBestRouteForEmployeeOnDay(emp, date, ctx, { forceCoverage: true });
       if (route) assignRouteToEmployee(emp, route, date, ctx);
     }
+  }
+};
+
+/** Soboty: każda kursująca trasa obsadzona + DW5 dla każdego kierowcy sobotniego. */
+const ensureSaturdayRoutesFilled = (ctx) => {
+  for (const date of listSaturdaysInMonth(ctx.month, ctx.year)) {
+    for (const route of sortOpenRoutesForFill(ctx.routes, date, ctx)) {
+      if (findRouteAssignment(date, route.id, ctx.workingSchedules)) continue;
+      const emp = findBestEmployeeForRouteOnDay(route, date, ctx, { forceCoverage: true });
+      if (emp && assignRouteToEmployee(emp, route, date, ctx)) continue;
+      tryCapabilitySwapForRoute(route, date, ctx);
+    }
+
+    for (const emp of sortFreeEmployeesForCoverage(ctx.employees, date, ctx)) {
+      if (getEmployeeRouteSlotCountOnDay(emp.id, date, ctx.workingSchedules, ctx.routes) > 0) {
+        continue;
+      }
+      if (!isEmployeeDayMutable(emp.id, date, ctx.initialEmployeeDays)) continue;
+      if (hasPendingOrPersistedLabelOnDay(ctx, emp.id, date)) continue;
+      const route = findBestRouteForEmployeeOnDay(emp, date, ctx, { forceCoverage: true });
+      if (route) assignRouteToEmployee(emp, route, date, ctx);
+    }
+  }
+
+  const saturdayWorkerKeys = new Set();
+  for (const s of ctx.workingSchedules) {
+    if (s.route_id && isSaturday(s.date) && s.employee_id != null) {
+      saturdayWorkerKeys.add(`${s.employee_id}::${s.date}`);
+    }
+  }
+  for (const key of saturdayWorkerKeys) {
+    const sep = key.indexOf('::');
+    const empId = key.slice(0, sep);
+    const satDate = key.slice(sep + 2);
+    forceDw5ForSaturday(ctx, empId, satDate);
   }
 };
 
@@ -1066,7 +1375,7 @@ const fillWeekdaysByDay = (ctx) => {
 const balanceEmployeeMonth = (employee, ctx) => {
   const threshold = getGapCloseThreshold(employee, ctx);
 
-  for (let pass = 0; pass < 100; pass++) {
+  for (let pass = 0; pass < 50; pass++) {
     const gap = getHourGap(employee, ctx);
     const qGap = getQuarterHourGap(employee, ctx);
     if (Math.abs(gap) <= threshold && Math.abs(qGap) <= threshold * 1.5) break;
@@ -1083,8 +1392,9 @@ const balanceEmployeeMonth = (employee, ctx) => {
         if (swap) {
           removeRouteSlot(swap.date, swap.route.id, ctx);
           assignRouteToEmployee(employee, swap.route, swap.date, ctx);
-          if (swap.otherRecovery) {
-            assignRouteToEmployee(swap.other, swap.otherRecovery.route, swap.otherRecovery.date, ctx);
+          const refill = findBestEmptySlot(swap.other, ctx);
+          if (refill) {
+            assignRouteToEmployee(swap.other, refill.route, refill.date, ctx);
           }
           continue;
         }
@@ -1210,7 +1520,7 @@ const ensureWeekdayCoverage = (ctx) => {
 /** Czy pracownik nie ma nic w danym dniu (brak trasy i etykiety), a dzień jest edytowalny. */
 const isEmployeeWeekdayEmpty = (employeeId, date, ctx) => {
   if (!isEmployeeDayMutable(employeeId, date, ctx.initialEmployeeDays)) return false;
-  if (hasEmployeeLabelOnDay(employeeId, date, ctx.workingSchedules)) return false;
+  if (hasPendingOrPersistedLabelOnDay(ctx, employeeId, date)) return false;
   return (
     getEmployeeRouteSlotCountOnDay(employeeId, date, ctx.workingSchedules, ctx.routes) === 0
   );
@@ -1288,17 +1598,11 @@ const tryFillEmptyDayForEmployee = (employee, date, ctx) => {
       continue;
     }
 
-    const backup = {
-      workingSchedules: ctx.workingSchedules.map((s) => ({ ...s })),
-      assignments: ctx.assignments.map((a) => ({ ...a })),
-      labelAssignments: ctx.labelAssignments.map((l) => ({ ...l })),
-    };
+    const snap = snapshotCtx(ctx);
 
     removeRouteSlot(date, takenRoute.id, ctx);
     if (!assignRouteToEmployee(employee, takenRoute, date, ctx)) {
-      ctx.workingSchedules = backup.workingSchedules;
-      ctx.assignments = backup.assignments;
-      ctx.labelAssignments = backup.labelAssignments;
+      restoreCtx(ctx, snap);
       continue;
     }
 
@@ -1328,7 +1632,7 @@ const fillRemainingEmptyEmployeeDays = (ctx) => {
   let changed = true;
   let guard = 0;
 
-  while (changed && guard < 500) {
+  while (changed && guard < 200) {
     changed = false;
     guard += 1;
 
@@ -1452,11 +1756,7 @@ const tryCapabilitySwapForRoute = (route, date, ctx) => {
     for (const freeEmp of freeEmployees) {
       if (freeEmp.id.toString() === occupant.id.toString()) continue;
 
-      const backup = {
-        workingSchedules: ctx.workingSchedules.map((s) => ({ ...s })),
-        assignments: ctx.assignments.map((a) => ({ ...a })),
-        labelAssignments: ctx.labelAssignments.map((l) => ({ ...l })),
-      };
+      const snap = snapshotCtx(ctx);
 
       removeRouteSlot(date, currentRoute.id, ctx);
 
@@ -1467,9 +1767,7 @@ const tryCapabilitySwapForRoute = (route, date, ctx) => {
         return true;
       }
 
-      ctx.workingSchedules = backup.workingSchedules;
-      ctx.assignments = backup.assignments;
-      ctx.labelAssignments = backup.labelAssignments;
+      restoreCtx(ctx, snap);
     }
   }
 
@@ -1547,7 +1845,7 @@ const finalizeDriverRouteMatching = (ctx) => {
   let changed = true;
   let guard = 0;
 
-  while (changed && guard < 600) {
+  while (changed && guard < 250) {
     changed = false;
     guard += 1;
 
@@ -1602,11 +1900,7 @@ const trySwapRoutesBetweenEmployees = (date, empA, empB, routeA, routeB, ctx, op
     Math.abs(getHourGap(empB, ctx)) +
     Math.abs(getQuarterHourGap(empB, ctx));
 
-  const backup = {
-    workingSchedules: ctx.workingSchedules.map((s) => ({ ...s })),
-    assignments: ctx.assignments.map((a) => ({ ...a })),
-    labelAssignments: ctx.labelAssignments.map((l) => ({ ...l })),
-  };
+  const snap = snapshotCtx(ctx);
 
   removeRouteSlot(date, routeA.id, ctx);
   removeRouteSlot(date, routeB.id, ctx);
@@ -1616,9 +1910,7 @@ const trySwapRoutesBetweenEmployees = (date, empA, empB, routeA, routeB, ctx, op
     assignRouteToEmployee(empB, routeA, date, ctx);
 
   if (!ok) {
-    ctx.workingSchedules = backup.workingSchedules;
-    ctx.assignments = backup.assignments;
-    ctx.labelAssignments = backup.labelAssignments;
+    restoreCtx(ctx, snap);
     return false;
   }
 
@@ -1628,9 +1920,7 @@ const trySwapRoutesBetweenEmployees = (date, empA, empB, routeA, routeB, ctx, op
     Math.abs(getHourGap(empB, ctx)) +
     Math.abs(getQuarterHourGap(empB, ctx));
   if (!allowWorse && gapAfter >= gapBefore) {
-    ctx.workingSchedules = backup.workingSchedules;
-    ctx.assignments = backup.assignments;
-    ctx.labelAssignments = backup.labelAssignments;
+    restoreCtx(ctx, snap);
     return false;
   }
 
@@ -1676,11 +1966,11 @@ const fillAllOperatingRouteSlots = (ctx) => {
   let changed = true;
   let guard = 0;
 
-  while (changed && guard < 500) {
+  while (changed && guard < 200) {
     changed = false;
     guard += 1;
 
-    for (const date of listMonthDates(ctx.month, ctx.year)) {
+    for (const date of listNonSundayDates(ctx.month, ctx.year)) {
       const openRoutes = sortOpenRoutesForFill(ctx.routes, date, ctx);
 
       for (const route of openRoutes) {
@@ -1802,19 +2092,6 @@ const canStackRouteOnEmployee = (employee, route, date, ctx) => {
 const assignStackedRoute = (employee, route, date, ctx) => {
   if (!canStackRouteOnEmployee(employee, route, date, ctx)) return false;
 
-  if (isSaturday(date)) {
-    const pkg = planSaturdayDw5Package(
-      date,
-      employee.id,
-      ctx.workingSchedules,
-      ctx.routes,
-      ctx.employees.length,
-      ctx.user_id,
-      { initialEmployeeDays: ctx.initialEmployeeDays }
-    );
-    if (!pkg) return false;
-  }
-
   const pairRoute = findPairRoute(route, ctx.routes);
   if (
     !pushAssignment(
@@ -1840,7 +2117,7 @@ const assignStackedRoute = (employee, route, date, ctx) => {
   }
 
   if (isSaturday(date)) {
-    pushDw5Package(ctx, employee.id, date);
+    forceDw5ForSaturday(ctx, employee.id, date);
   }
 
   return true;
@@ -1924,6 +2201,7 @@ function generateAutoFillAssignments({
     employees: sortEmployeesForFillOrder(employees),
     routes,
     workingSchedules,
+    persistSim: baselineSchedules.map((s) => ({ ...s })),
     quarterSchedules: quarterSchedules.map((s) => ({ ...s })),
     assignments: [],
     labelAssignments: [],
@@ -1968,6 +2246,7 @@ function generateAutoFillAssignments({
   fillRemainingEmptyEmployeeDays(ctx);
 
   fillSaturdayRoutes(ctx);
+  ensureSaturdayRoutesFilled(ctx);
 
   let gapFillPasses = 0;
   for (let pass = 0; pass < 15; pass++) {
@@ -1983,42 +2262,37 @@ function generateAutoFillAssignments({
     }
   }
 
-  const extraLabels = generateDw5Proposals(
-    ctx.workingSchedules,
-    user_id,
-    routes,
-    ctx.employees.length
-  );
+  ensureSaturdayRoutesFilled(ctx);
+  mergeExtraDw5Labels(ctx, user_id, routes);
 
-  // Dedup etykiet po (pracownik|data|label) — DW5 maks. raz na dzień/tydzień
-  const seenLabels = new Set();
-  const labelAssignments = [...ctx.labelAssignments, ...extraLabels].filter((l) => {
-    const key = `${l.employee_id}|${l.date}|${l.label}`;
-    if (seenLabels.has(key)) return false;
-    seenLabels.add(key);
-    return true;
-  });
+  let syncPasses = 0;
+  let finalSync = syncWorkingSchedulesToPersistable(ctx, baselineSchedules, routes);
+  for (let pass = 1; pass < 15 && finalSync.pruned; pass++) {
+    fillRemainingEmptyEmployeeDays(ctx);
+    fillUnderHourEmployeeGaps(ctx);
+    fillRemainingEmptyEmployeeDays(ctx);
+    fillSaturdayRoutes(ctx);
+    ensureSaturdayRoutesFilled(ctx);
+    mergeExtraDw5Labels(ctx, user_id, routes);
+    finalSync = syncWorkingSchedulesToPersistable(ctx, baselineSchedules, routes);
+    syncPasses = pass;
+  }
 
-  const routeProposals = collectNewRouteProposals(
-    ctx.workingSchedules,
-    baselineSchedules,
-    user_id
-  );
-  const { kept: routeAssignments } = filterPersistableAssignments(
-    routeProposals,
-    baselineSchedules,
-    routes,
-    ctx.employees
-  );
+  const { kept: routeAssignments, rejected, routeProposals } = finalSync;
 
   return {
     routeAssignments,
-    labelAssignments,
+    labelAssignments: ctx.labelAssignments,
     debug: {
       afterAlgorithm: buildAutoFillAlgorithmReport(ctx),
       proposedRoutes: routeProposals.length,
-      proposedLabels: labelAssignments.length,
+      persistableRoutes: routeAssignments.length,
+      rejectedRoutes: rejected.length,
+      rejectedByReason: groupRejectionsByReason(rejected),
+      persistRejected: rejected,
+      proposedLabels: ctx.labelAssignments.length,
       gapFillPasses,
+      syncPasses,
     },
   };
 }
@@ -2044,6 +2318,7 @@ function generateGapFillOnly({
     employees: sortEmployeesForFillOrder(employees),
     routes,
     workingSchedules,
+    persistSim: baselineSchedules.map((s) => ({ ...s })),
     quarterSchedules: quarterSchedules.map((s) => ({ ...s })),
     assignments: [],
     labelAssignments: [],
@@ -2067,19 +2342,21 @@ function generateGapFillOnly({
     if (!any) break;
   }
 
-  const routeProposals = collectNewRouteProposals(
-    ctx.workingSchedules,
-    baselineSchedules,
-    user_id
-  );
-  const { kept: routeAssignments } = filterPersistableAssignments(
-    routeProposals,
-    baselineSchedules,
-    routes,
-    employees
-  );
+  ensureSaturdayRoutesFilled(ctx);
+  mergeExtraDw5Labels(ctx, user_id, routes);
 
-  return { routeAssignments };
+  let finalSync = syncWorkingSchedulesToPersistable(ctx, baselineSchedules, routes);
+  for (let pass = 1; pass < 15 && finalSync.pruned; pass++) {
+    fillRemainingEmptyEmployeeDays(ctx);
+    fillUnderHourEmployeeGaps(ctx);
+    fillRemainingEmptyEmployeeDays(ctx);
+    fillSaturdayRoutes(ctx);
+    ensureSaturdayRoutesFilled(ctx);
+    mergeExtraDw5Labels(ctx, user_id, routes);
+    finalSync = syncWorkingSchedulesToPersistable(ctx, baselineSchedules, routes);
+  }
+
+  return { routeAssignments: finalSync.kept };
 }
 
 module.exports = {

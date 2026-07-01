@@ -102,17 +102,59 @@ const isEmployeeDayBlockedForDw5 = (employeeId, date, schedules, initialEmployee
  * Pracownik musi mieć ten dzień wolny.
  */
 const pickDw5Date = (saturdayDate, employeeId, schedules, routes, employeeCount, options = {}) => {
-  const { initialEmployeeDays = null } = options;
+  const { initialEmployeeDays = null, skipStructuralCheck = false } = options;
   const activeRoutes = routes.filter(routeHasSegments);
   const candidates = getDw5CandidateWeekdays(saturdayDate);
 
   for (const date of candidates) {
-    if (!isDayStructurallyStaffable(date, activeRoutes, employeeCount)) continue;
+    if (!skipStructuralCheck && !isDayStructurallyStaffable(date, activeRoutes, employeeCount)) {
+      continue;
+    }
     if (isEmployeeDayBlockedForDw5(employeeId, date, schedules, initialEmployeeDays)) continue;
     return date;
   }
 
   return null;
+};
+
+/**
+ * DW5: pn → pt → wt–czw. Najpierw pełne reguły, potem bez warunku „obsadzalności dnia”
+ * (5 kandydatów — przy auto-fill jeden musi zostać wybrany, jeśli dzień nie jest ręcznie zamrożony).
+ */
+const pickDw5DateWithFallback = (
+  saturdayDate,
+  employeeId,
+  schedules,
+  routes,
+  employeeCount,
+  options = {}
+) => {
+  const strict = pickDw5Date(
+    saturdayDate,
+    employeeId,
+    schedules,
+    routes,
+    employeeCount,
+    options
+  );
+  if (strict) return strict;
+
+  return pickDw5Date(
+    saturdayDate,
+    employeeId,
+    schedules,
+    routes,
+    employeeCount,
+    { ...options, skipStructuralCheck: true }
+  );
+};
+
+/** Kandydaci DW5 niezamrożeni ręcznie (kolejność pn, pt, wt, śr, czw). */
+const listDw5CandidateDatesForEmployee = (saturdayDate, employeeId, initialEmployeeDays = null) => {
+  const candidates = getDw5CandidateWeekdays(saturdayDate);
+  return candidates.filter(
+    (date) => !initialEmployeeDays?.has(employeeDayKey(date, employeeId))
+  );
 };
 
 const hasDw5AfterSaturday = (employeeId, saturdayDate, schedules) => {
@@ -129,7 +171,10 @@ const canAssignSaturdayRouteWithDw5 = (
   routes,
   employeeCount,
   options = {}
-) => pickDw5Date(saturdayDate, employeeId, schedules, routes, employeeCount, options) != null;
+) => {
+  const picker = options.relaxedDw5 ? pickDw5DateWithFallback : pickDw5Date;
+  return picker(saturdayDate, employeeId, schedules, routes, employeeCount, options) != null;
+};
 
 const buildDw5LabelProposal = (dw5Date, employeeId, user_id) => ({
   date: dw5Date,
@@ -161,7 +206,8 @@ const planSaturdayDw5Package = (
 ) => {
   if (!isSaturday(saturdayDate)) return null;
 
-  const dw5Date = pickDw5Date(
+  const picker = options.relaxedDw5 ? pickDw5DateWithFallback : pickDw5Date;
+  const dw5Date = picker(
     saturdayDate,
     employeeId,
     schedules,
@@ -246,7 +292,13 @@ const generateDw5Proposals = (schedules, user_id, routes = [], employeeCount = 0
 
     if (hasDw5AfterSaturday(entry.employee_id, entry.date, working)) continue;
 
-    const dw5Date = pickDw5Date(entry.date, empId, working, activeRoutes, staffCount);
+    const dw5Date = pickDw5DateWithFallback(
+      entry.date,
+      entry.employee_id,
+      working,
+      activeRoutes,
+      staffCount
+    );
     if (!dw5Date) continue;
 
     const dw5Key = `dw5-${empId}-${dw5Date}`;
@@ -270,6 +322,10 @@ module.exports = {
   isDayStructurallyStaffable,
   getDw5CandidateWeekdays,
   pickDw5Date,
+  pickDw5DateWithFallback,
+  listDw5CandidateDatesForEmployee,
+  buildDw5LabelProposal,
+  buildDw5ScheduleEntry,
   canAssignSaturdayRouteWithDw5,
   planSaturdayDw5Package,
   hasDw5AfterSaturday,

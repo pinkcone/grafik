@@ -319,7 +319,7 @@ const buildAutoFillAlgorithmReport = (ctx) =>
     year: ctx.year,
     initialEmployeeDays: ctx.initialEmployeeDays,
     employeeCount: ctx.employees.length,
-    title: 'Po algorytmie (pamięć, przed zapisem do bazy)',
+    title: 'Po algorytmie (stan do zapisu — pamięć zsynchronizowana z filtrem)',
   });
 
 module.exports = {
