@@ -15,6 +15,21 @@ const persistRouteProposals = async (proposals, user_id, { autoFilled = false } 
       where: { date: item.date, route_id: item.route_id },
     });
     if (existing) {
+      if (existing.employee_id?.toString() === item.employee_id?.toString()) {
+        const rowJson = existing.toJSON ? existing.toJSON() : existing;
+        const dayKey = `${item.date}|${item.employee_id}`;
+        if (!dayStateCache.has(dayKey)) {
+          const dayEntries = await Schedule.findAll({
+            where: { date: item.date, employee_id: item.employee_id },
+          });
+          dayStateCache.set(
+            dayKey,
+            dayEntries.map((s) => (s.toJSON ? s.toJSON() : s))
+          );
+        }
+        created.push(existing);
+        continue;
+      }
       skipped.push({
         date: item.date,
         route_id: item.route_id,

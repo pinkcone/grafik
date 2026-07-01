@@ -314,10 +314,49 @@ const pushAssignment = (ctx, { date, route_id, employee_id }, options = {}) => {
   return true;
 };
 
-/** Symulacja zapisu — tylko propozycje, które przejdą walidację persist. */
+/**
+ * Propozycje zapisu = różnica stanu końcowego vs baseline (ręczny stan / aktualna baza).
+ * Źródłem prawdy jest workingSchedules po algorytmie, nie sama lista ctx.assignments.
+ */
+const collectNewRouteProposals = (workingSchedules, baselineSchedules, user_id) => {
+  const manualEmployeeRoutes = new Set();
+  for (const s of baselineSchedules) {
+    if (s.date && s.route_id && s.employee_id) {
+      manualEmployeeRoutes.add(
+        `${s.date}|${s.route_id.toString()}|${s.employee_id.toString()}`
+      );
+    }
+  }
+
+  const proposals = [];
+  const seenRouteSlot = new Set();
+
+  for (const s of workingSchedules) {
+    if (!s.date || !s.route_id || !s.employee_id) continue;
+    const routeId = s.route_id.toString();
+    const employeeId = s.employee_id.toString();
+    const empRouteKey = `${s.date}|${routeId}|${employeeId}`;
+    if (manualEmployeeRoutes.has(empRouteKey)) continue;
+
+    const routeSlotKey = `${s.date}|${routeId}`;
+    if (seenRouteSlot.has(routeSlotKey)) continue;
+    seenRouteSlot.add(routeSlotKey);
+
+    proposals.push({
+      date: s.date,
+      route_id: s.route_id,
+      employee_id: s.employee_id,
+      user_id,
+    });
+  }
+
+  return proposals;
+};
+
+/** Symulacja zapisu na baseline (ręczne + już zapisane), bez innych propozycji algorytmu. */
 const filterPersistableAssignments = (
   proposals,
-  workingSchedules,
+  baselineSchedules,
   routes,
   employees = []
 ) => {
@@ -330,21 +369,25 @@ const filterPersistableAssignments = (
     deduped.push(item);
   }
 
-  const isProposalRow = (s, proposal) =>
-    s.date === proposal.date &&
-    s.route_id?.toString() === proposal.route_id?.toString() &&
-    s.employee_id?.toString() === proposal.employee_id?.toString();
-
-  const sim = workingSchedules
-    .filter((s) => !deduped.some((p) => isProposalRow(s, p)))
-    .map((s) => ({ ...s }));
+  const sim = baselineSchedules.map((s) => ({ ...s }));
   const kept = [];
+  const rejected = [];
 
   for (const item of deduped) {
-    if (findRouteAssignment(item.date, item.route_id, sim)) {
+    const existing = findRouteAssignment(item.date, item.route_id, sim);
+    if (existing) {
+      if (existing.employee_id?.toString() === item.employee_id?.toString()) {
+        kept.push(item);
+      } else {
+        rejected.push({
+          item,
+          reason: `Slot trasy zajęty w baseline (kierowca #${existing.employee_id})`,
+        });
+      }
       continue;
     }
     if (hasEmployeeLabelOnDay(item.employee_id, item.date, sim)) {
+      rejected.push({ item, reason: 'Pracownik ma etykietę tego dnia' });
       continue;
     }
     if (
@@ -357,6 +400,10 @@ const filterPersistableAssignments = (
         { licenseCategory: getEmployeeLicenseCategory(item.employee_id, employees) }
       )
     ) {
+      rejected.push({
+        item,
+        reason: 'Pracownik ma już inną trasę tego dnia (limit slotów)',
+      });
       continue;
     }
 
@@ -369,7 +416,7 @@ const filterPersistableAssignments = (
     });
   }
 
-  return kept;
+  return { kept, rejected };
 };
 
 const routeCheckOptions = (ctx) => ({
@@ -1869,8 +1916,9 @@ function generateAutoFillAssignments({
   year,
   user_id,
 }) {
-  const workingSchedules = schedules.map((s) => ({ ...s }));
-  const { initialEmployeeDays, initialRouteSlots } = buildInitialSnapshot(schedules);
+  const baselineSchedules = schedules.map((s) => ({ ...s }));
+  const workingSchedules = baselineSchedules.map((s) => ({ ...s }));
+  const { initialEmployeeDays, initialRouteSlots } = buildInitialSnapshot(baselineSchedules);
 
   const ctx = {
     employees: sortEmployeesForFillOrder(employees),
@@ -1937,17 +1985,24 @@ function generateAutoFillAssignments({
     return true;
   });
 
+  const routeProposals = collectNewRouteProposals(
+    ctx.workingSchedules,
+    baselineSchedules,
+    user_id
+  );
+  const { kept: routeAssignments } = filterPersistableAssignments(
+    routeProposals,
+    baselineSchedules,
+    routes,
+    ctx.employees
+  );
+
   return {
-    routeAssignments: filterPersistableAssignments(
-      ctx.assignments,
-      ctx.workingSchedules,
-      routes,
-      ctx.employees
-    ),
+    routeAssignments,
     labelAssignments,
     debug: {
       afterAlgorithm: buildAutoFillAlgorithmReport(ctx),
-      proposedRoutes: ctx.assignments.length,
+      proposedRoutes: routeProposals.length,
       proposedLabels: labelAssignments.length,
     },
   };
@@ -1965,8 +2020,9 @@ function generateGapFillOnly({
   year,
   user_id,
 }) {
-  const workingSchedules = schedules.map((s) => ({ ...s }));
-  const manualSchedules = schedules.filter((s) => !s.auto_filled);
+  const baselineSchedules = schedules.map((s) => ({ ...s }));
+  const workingSchedules = baselineSchedules.map((s) => ({ ...s }));
+  const manualSchedules = baselineSchedules.filter((s) => !s.auto_filled);
   const { initialEmployeeDays, initialRouteSlots } = buildInitialSnapshot(manualSchedules);
 
   const ctx = {
@@ -1996,19 +2052,25 @@ function generateGapFillOnly({
     if (!any) break;
   }
 
-  return {
-    routeAssignments: filterPersistableAssignments(
-      ctx.assignments,
-      ctx.workingSchedules,
-      routes,
-      employees
-    ),
-  };
+  const routeProposals = collectNewRouteProposals(
+    ctx.workingSchedules,
+    baselineSchedules,
+    user_id
+  );
+  const { kept: routeAssignments } = filterPersistableAssignments(
+    routeProposals,
+    baselineSchedules,
+    routes,
+    employees
+  );
+
+  return { routeAssignments };
 }
 
 module.exports = {
   generateAutoFillAssignments,
   generateGapFillOnly,
+  collectNewRouteProposals,
   filterPersistableAssignments,
   buildLockedRouteSlots,
   buildInitialSnapshot,

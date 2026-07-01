@@ -29,6 +29,32 @@ const routeHasSegments = (route) => {
 
 const toSchedulePlain = (s) => (s.toJSON ? s.toJSON() : { ...s });
 
+const pushFilterRejections = (rejected, target) => {
+  for (const r of rejected) {
+    target.push({
+      date: r.item.date,
+      route_id: r.item.route_id,
+      employee_id: r.item.employee_id,
+      reason: `Odfiltrowano przed zapisem: ${r.reason}`,
+    });
+  }
+};
+
+const pushCreatedToLiveSchedules = (rows, liveSchedules) => {
+  const seen = new Set(
+    liveSchedules.map(
+      (s) => `${s.date}|${s.route_id?.toString()}|${s.employee_id?.toString()}`
+    )
+  );
+  for (const row of rows) {
+    const plain = toSchedulePlain(row);
+    const key = `${plain.date}|${plain.route_id?.toString()}|${plain.employee_id?.toString()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    liveSchedules.push(plain);
+  }
+};
+
 async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
   const lastDay = new Date(yearNum, monthNum, 0).getDate();
   const startDate = `${yearNum}-${String(monthNum).padStart(2, '0')}-01`;
@@ -107,21 +133,21 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
     let firstBatchSkipped = [];
     const liveSchedules = citySchedules.map(toSchedulePlain);
     for (const proposal of routeAssignments) {
-      const [persistable] = filterPersistableAssignments(
+      const { kept, rejected } = filterPersistableAssignments(
         [proposal],
         liveSchedules,
         activeRoutes,
         employees
       );
+      pushFilterRejections(rejected, persistSkipped);
+      const persistable = kept[0];
       if (!persistable) continue;
 
       const routeResult = await runPersistBatch([persistable]);
       firstBatchCreated += routeResult.created.length;
       created.push(...routeResult.created);
       firstBatchSkipped.push(...routeResult.skipped);
-      for (const row of routeResult.created) {
-        liveSchedules.push(toSchedulePlain(row));
-      }
+      pushCreatedToLiveSchedules(routeResult.created, liveSchedules);
     }
     persistSkipped.push(...firstBatchSkipped);
     labelsCreated = await persistLabelProposals(labelAssignments, user_id, {
@@ -153,21 +179,21 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
     let roundCreated = 0;
     const liveSchedules = gapCitySchedules.map(toSchedulePlain);
     for (const proposal of gapProposals) {
-      const [persistable] = filterPersistableAssignments(
+      const { kept, rejected } = filterPersistableAssignments(
         [proposal],
         liveSchedules,
         activeRoutes,
         employees
       );
+      pushFilterRejections(rejected, persistSkipped);
+      const persistable = kept[0];
       if (!persistable) continue;
 
       const gapResult = await runPersistBatch([persistable]);
       roundCreated += gapResult.created.length;
       created.push(...gapResult.created);
       persistSkipped.push(...gapResult.skipped);
-      for (const row of gapResult.created) {
-        liveSchedules.push(toSchedulePlain(row));
-      }
+      pushCreatedToLiveSchedules(gapResult.created, liveSchedules);
     }
     if (roundCreated === 0) break;
 
@@ -212,7 +238,7 @@ async function runAutoFill({ cityId, monthNum, yearNum, user_id }) {
       ...(algorithmDebug?.afterAlgorithm?.logs || []),
       '',
       '--- Zapis do bazy ---',
-      'Wersja: fix filtra persist + zapis pojedynczy tras',
+      'Wersja: diff workingSchedules vs baseline + filtr na baseline',
       `Zaproponowano tras: ${routeAssignments.length} (w tym soboty: ${routeAssignments.filter((r) => isSaturday(r.date)).length})`,
       `Zapisano w 1. partii: ${firstBatchCreated}`,
       `Dodatkowe rundy domykania luk: ${gapFillRounds}`,
