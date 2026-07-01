@@ -8,6 +8,7 @@ import { canAssignEmployeeToRouteWithPair, getAssignmentBlockReason, findPairRou
 import { hasEmployeeLabelOnDay } from '../utils/scheduleLabels';
 import { getEmployeeRouteSlotCountOnDay, canEmployeeHaveAnotherRouteOnDay } from '../utils/scheduleConstraints';
 import Popup from '../components/Popup';
+import { useNotifications } from '../context/NotificationsContext';
 import '../styles/ScheduleView.css';
 import '../styles/ScheduleDayMenu.css';
 
@@ -23,6 +24,7 @@ const MONTH_NAMES = [
 
 function ScheduleView({ cityId }) {
   const token = localStorage.getItem('token');
+  const { notifications, refresh: refreshNotifications } = useNotifications();
 
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
@@ -199,6 +201,51 @@ function ScheduleView({ cityId }) {
       // ignore
     }
   };
+
+  useEffect(() => {
+    const applyDebugFromNotification = (n) => {
+      const debug = n.result?.debug;
+      if (!debug) return;
+      setAutoFillDebug(debug);
+      setAutoFillDebugOpen(true);
+      console.group('[Auto-fill] Diagnostyka');
+      console.log('Podsumowanie po zapisie:', debug.afterPersist?.summary);
+      console.log('Pominięte zapisy:', debug.persistSkipped);
+      (debug.logs || []).forEach((line) => console.log(line));
+      console.groupEnd();
+    };
+
+    const onCompleted = async (e) => {
+      const n = e.detail;
+      if (String(n.cityId) !== String(cityId) || n.month !== month || n.year !== year) return;
+      applyDebugFromNotification(n);
+      await fetchSchedule();
+      await fetchQuarterSchedules();
+    };
+
+    const onFailed = (e) => {
+      const n = e.detail;
+      if (String(n.cityId) !== String(cityId) || n.month !== month || n.year !== year) return;
+      alert(`Auto-uzupełnianie nie powiodło się: ${n.error || n.message}`);
+    };
+
+    window.addEventListener('grafik-job-completed', onCompleted);
+    window.addEventListener('grafik-job-failed', onFailed);
+    return () => {
+      window.removeEventListener('grafik-job-completed', onCompleted);
+      window.removeEventListener('grafik-job-failed', onFailed);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cityId, month, year]);
+
+  const autoFillRunning = notifications.some(
+    (n) =>
+      n.type === 'auto_fill' &&
+      n.status === 'running' &&
+      String(n.cityId) === String(cityId) &&
+      n.month === month &&
+      n.year === year
+  );
 
   const daysInMonth = (m, y) => new Date(y, m, 0).getDate();
   const days = [];
@@ -795,21 +842,20 @@ const handleExportCSV = () => {
         throw new Error(data.message || `HTTP ${res.status}`);
       }
 
+      if (res.status === 202) {
+        refreshNotifications();
+        return;
+      }
+
       if (data.debug) {
         setAutoFillDebug(data.debug);
         setAutoFillDebugOpen(true);
-        console.group('[Auto-fill] Diagnostyka');
-        console.log('Podsumowanie po zapisie:', data.debug.afterPersist?.summary);
-        console.log('Pominięte zapisy:', data.debug.persistSkipped);
-        (data.debug.logs || []).forEach((line) => console.log(line));
-        console.groupEnd();
       }
-
       alert(data.message || `Uzupełniono ${data.created || 0} przypisań.`);
       await fetchSchedule();
       await fetchQuarterSchedules();
     } catch (error) {
-      alert(`Nie udało się uzupełnić grafiku: ${error.message}`);
+      alert(`Nie udało się uruchomić auto-uzupełniania: ${error.message}`);
     }
   };
 
@@ -1109,8 +1155,13 @@ const prepareRoutesSheet = () => {
       <div className="schedule-toolbar">
         <button type="button" onClick={handleExportXLSX}>Eksport do XLSX</button>
         <button type="button" onClick={handleExportCSV}>Eksport do CSV</button>
-        <button type="button" className="btn-primary" onClick={handleAutoFillRoutes}>
-          Uzupełnij trasy
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={handleAutoFillRoutes}
+          disabled={autoFillRunning}
+        >
+          {autoFillRunning ? 'Uzupełnianie…' : 'Uzupełnij trasy'}
         </button>
         <button type="button" className="btn-primary" onClick={() => setAssignMonthOpen(true)}>
           Przypisz na cały miesiąc

@@ -1,30 +1,14 @@
 // controllers/scheduleController.js
-const { Schedule, Employee, Route } = require('../models');
+const { Schedule, Employee, Route, City } = require('../models');
+const { runAutoFill } = require('../services/autoFillService');
+const { createJob, completeJob, failJob } = require('../utils/autoFillJobStore');
+const { persistRouteProposals, persistLabelProposals } = require('../utils/schedulePersist');
 const { Op } = require('sequelize');
 const { canAssignEmployeeToRoute, getAssignmentBlockReason, findPairRoute } = require('../utils/routeAssignment');
 const { enrichRouteWithOperatingDays, attachOperatingDays } = require('../utils/routeDayHelpers');
-const { generateAutoFillAssignments, generateGapFillOnly, hasMeaningfulAssignment } = require('../utils/scheduleAutoFill');
-const { buildScheduleGapReport } = require('../utils/scheduleAutoFillDebug');
-const { getQuarterMonths } = require('../utils/scheduleHours');
 const { generateMonthRouteAssignments } = require('../utils/assignMonth');
-const { generateDw5Proposals } = require('../utils/scheduleRules');
 const { hasEmployeeLabelOnDay } = require('../utils/scheduleLabels');
-const { canEmployeeHaveAnotherRouteOnDay, canPersistRouteAssignment } = require('../utils/scheduleConstraints');
-
-const parseWorkingHours = (wh) => {
-  if (!wh) return null;
-  if (typeof wh === 'object') return wh;
-  try {
-    return JSON.parse(wh);
-  } catch {
-    return null;
-  }
-};
-
-const routeHasSegments = (route) => {
-  const wh = parseWorkingHours(route.working_hours);
-  return !!(wh && Array.isArray(wh.segments) && wh.segments.length > 0);
-};
+const { canEmployeeHaveAnotherRouteOnDay } = require('../utils/scheduleConstraints');
 
 const addDaysToDate = (dateStr, days) => {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -32,124 +16,6 @@ const addDaysToDate = (dateStr, days) => {
   dt.setDate(dt.getDate() + days);
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 };
-
-const persistRouteProposals = async (proposals, user_id, { autoFilled = false } = {}) => {
-  const created = [];
-  const skipped = [];
-  const routesCache = new Map();
-  const dayStateCache = new Map();
-
-  for (const item of proposals) {
-    const existing = await Schedule.findOne({
-      where: { date: item.date, route_id: item.route_id },
-    });
-    if (existing) {
-      skipped.push({
-        date: item.date,
-        route_id: item.route_id,
-        employee_id: item.employee_id,
-        reason: `Slot trasy już zajęty (kierowca #${existing.employee_id})`,
-      });
-      continue;
-    }
-
-    const dayKey = `${item.date}|${item.employee_id}`;
-    if (!dayStateCache.has(dayKey)) {
-      const dayEntries = await Schedule.findAll({
-        where: { date: item.date, employee_id: item.employee_id },
-      });
-      dayStateCache.set(
-        dayKey,
-        dayEntries.map((s) => (s.toJSON ? s.toJSON() : s))
-      );
-    }
-    const daySchedules = dayStateCache.get(dayKey);
-
-    if (hasEmployeeLabelOnDay(item.employee_id, item.date, daySchedules)) {
-      skipped.push({
-        date: item.date,
-        route_id: item.route_id,
-        employee_id: item.employee_id,
-        reason: 'Pracownik ma etykietę tego dnia',
-      });
-      continue;
-    }
-
-    if (!routesCache.has(user_id)) {
-      routesCache.set(
-        user_id,
-        await attachOperatingDays(await Route.findAll({ where: { user_id } }))
-      );
-    }
-    const userRoutes = routesCache.get(user_id);
-
-    const canTake = canPersistRouteAssignment(
-      item.employee_id,
-      item.route_id,
-      item.date,
-      daySchedules,
-      userRoutes
-    );
-    if (!canTake) {
-      skipped.push({
-        date: item.date,
-        route_id: item.route_id,
-        employee_id: item.employee_id,
-        reason: 'Pracownik ma już inną trasę tego dnia (limit slotów)',
-      });
-      continue;
-    }
-
-    const row = await Schedule.create({
-      date: item.date,
-      employee_id: item.employee_id,
-      route_id: item.route_id,
-      label: null,
-      assignment_type: 'route',
-      user_id: item.user_id || user_id,
-      auto_filled: autoFilled,
-    });
-    const rowJson = row.toJSON ? row.toJSON() : row;
-    daySchedules.push(rowJson);
-    created.push(row);
-  }
-  return { created, skipped };
-};
-
-const persistLabelProposals = async (proposals, user_id, { autoFilled = false } = {}) => {
-  const created = [];
-  for (const item of proposals) {
-    const existing = await Schedule.findOne({
-      where: { date: item.date, employee_id: item.employee_id },
-    });
-    if (existing?.label === item.label) continue;
-    if (existing?.label) continue;
-
-    if (existing) {
-      await existing.update({
-        label: item.label,
-        route_id: null,
-        assignment_type: 'label',
-        user_id: item.user_id || user_id,
-        auto_filled: autoFilled,
-      });
-      created.push(existing);
-    } else {
-      const row = await Schedule.create({
-        date: item.date,
-        employee_id: item.employee_id,
-        route_id: null,
-        label: item.label,
-        assignment_type: 'label',
-        user_id: item.user_id || user_id,
-        auto_filled: autoFilled,
-      });
-      created.push(row);
-    }
-  }
-  return created;
-};
-
 
 /**
  * PUT /api/schedule/update-cell
@@ -339,7 +205,7 @@ exports.getCitySchedule = async (req, res) => {
 
 /**
  * POST /api/schedule/city/:cityId/auto-fill?month=MM&year=YYYY
- * Uzupełnia puste sloty tras (nie nadpisuje etykiet ani istniejących tras).
+ * Uruchamia uzupełnianie tras w tle (202 + jobId). Wynik w powiadomieniach.
  */
 exports.autoFillRoutes = async (req, res) => {
   const { cityId } = req.params;
@@ -353,196 +219,40 @@ exports.autoFillRoutes = async (req, res) => {
       return res.status(400).json({ message: 'Podaj month i year w query.' });
     }
 
-    const lastDay = new Date(yearNum, monthNum, 0).getDate();
-    const startDate = `${yearNum}-${String(monthNum).padStart(2, '0')}-01`;
-    const endDate = `${yearNum}-${String(monthNum).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-
-    const qMonths = getQuarterMonths(monthNum);
-    const startQuarter = `${yearNum}-${String(qMonths[0]).padStart(2, '0')}-01`;
-
-    const employees = await Employee.findAll({ where: { city_id: cityId, user_id } });
-    const employeeIds = employees.map((e) => e.id);
-    if (employeeIds.length > 0) {
-      await Schedule.destroy({
-        where: {
-          date: { [Op.between]: [startDate, endDate] },
-          employee_id: { [Op.in]: employeeIds },
-          route_id: { [Op.is]: null },
-          [Op.or]: [{ label: null }, { label: '' }],
-        },
-      });
+    const city = await City.findOne({ where: { id: cityId, user_id } });
+    if (!city) {
+      return res.status(404).json({ message: 'Miasto nie znalezione.' });
     }
 
-    const [routesRaw, schedules, quarterSchedulesRaw] = await Promise.all([
-      Route.findAll({ where: { main_city_id: cityId, user_id } }),
-      Schedule.findAll({
-        where: { date: { [Op.between]: [startDate, endDate] } },
-      }),
-      Schedule.findAll({
-        where: { date: { [Op.between]: [startQuarter, endDate] } },
-      }),
-    ]);
-
-    const routes = await attachOperatingDays(routesRaw);
-    const activeRoutes = routes.filter(routeHasSegments);
-    const cityEmployeeIds = new Set(employees.map((e) => e.id.toString()));
-    const citySchedules = schedules
-      .filter((s) => cityEmployeeIds.has(s.employee_id?.toString()))
-      .filter(hasMeaningfulAssignment);
-    const quarterSchedules = quarterSchedulesRaw
-      .filter((s) => cityEmployeeIds.has(s.employee_id?.toString()))
-      .filter((s) => parseInt(s.date.split('-')[1], 10) !== monthNum)
-      .filter(hasMeaningfulAssignment);
-
-    const { routeAssignments, labelAssignments, debug: algorithmDebug } =
-      generateAutoFillAssignments({
-        employees,
-        routes: activeRoutes,
-        schedules: citySchedules,
-        quarterSchedules,
-        month: monthNum,
-        year: yearNum,
-        user_id,
-      });
-
-    const persistSkipped = [];
-    let created = [];
-    let labelsCreated = [];
-    let gapFillRounds = 0;
-
-    const runPersistBatch = async (proposals) => {
-      if (!proposals || proposals.length === 0) {
-        return { created: [], skipped: [] };
-      }
-      return persistRouteProposals(proposals, user_id, { autoFilled: true });
-    };
-
-    let firstBatchCreated = 0;
-
-    if (routeAssignments.length > 0 || labelAssignments.length > 0) {
-      const routeResult = await runPersistBatch(routeAssignments);
-      firstBatchCreated = routeResult.created.length;
-      created = routeResult.created;
-      persistSkipped.push(...routeResult.skipped);
-      labelsCreated = await persistLabelProposals(labelAssignments, user_id, {
-        autoFilled: true,
-      });
-    }
-
-    let gapSchedules = await Schedule.findAll({
-      where: { date: { [Op.between]: [startDate, endDate] } },
-    });
-
-    for (let round = 0; round < 25; round++) {
-      const gapCitySchedules = gapSchedules.filter((s) =>
-        cityEmployeeIds.has(s.employee_id?.toString())
-      );
-
-      const { routeAssignments: gapProposals } = generateGapFillOnly({
-        employees,
-        routes: activeRoutes,
-        schedules: gapCitySchedules,
-        quarterSchedules,
-        month: monthNum,
-        year: yearNum,
-        user_id,
-      });
-
-      if (gapProposals.length === 0) break;
-
-      const gapResult = await runPersistBatch(gapProposals);
-      if (gapResult.created.length === 0) break;
-
-      gapFillRounds += 1;
-      created.push(...gapResult.created);
-      persistSkipped.push(...gapResult.skipped);
-      gapSchedules = await Schedule.findAll({
-        where: { date: { [Op.between]: [startDate, endDate] } },
-      });
-    }
-
-    const afterSchedules = gapSchedules;
-    const afterCitySchedules = afterSchedules.filter((s) =>
-      cityEmployeeIds.has(s.employee_id?.toString())
-    );
-
-    const afterPersist = buildScheduleGapReport({
-      employees,
-      routes: activeRoutes,
-      schedules: afterCitySchedules,
-      quarterSchedules,
+    const job = createJob(user_id, {
+      type: 'auto_fill',
+      cityId: parseInt(cityId, 10),
+      cityName: city.name,
       month: monthNum,
       year: yearNum,
-      employeeCount: employees.length,
-      title: 'Po zapisie do bazy (stan widoczny w UI)',
+      title: `Auto-uzupełnianie: ${city.name} (${monthNum}/${yearNum})`,
     });
 
-    const persistLogs = persistSkipped.map(
-      (s) =>
-        `POMINIĘTO ZAPIS: ${s.date} trasa #${s.route_id} → kierowca #${s.employee_id}: ${s.reason}`
-    );
+    setImmediate(() => {
+      runAutoFill({ cityId: parseInt(cityId, 10), monthNum, yearNum, user_id })
+        .then((result) => {
+          completeJob(user_id, job.id, { message: result.message, result });
+        })
+        .catch((err) => {
+          console.error('Błąd zadania auto-fill:', err);
+          failJob(user_id, job.id, err.message || 'Błąd auto-uzupełniania grafiku');
+        });
+    });
 
-    const debug = {
-      proposedRoutes: routeAssignments.length,
-      proposedLabels: labelAssignments.length,
-      createdRoutes: created.length,
-      createdLabels: labelsCreated.length,
-      persistSkippedCount: persistSkipped.length,
-      gapFillRounds,
-      afterAlgorithm: algorithmDebug?.afterAlgorithm || null,
-      afterPersist,
-      persistSkipped,
-      logs: [
-        ...(algorithmDebug?.afterAlgorithm?.logs || []),
-        '',
-        '--- Zapis do bazy ---',
-        `Zaproponowano tras: ${routeAssignments.length}, zapisano w 1. partii: ${firstBatchCreated}`,
-        `Dodatkowe rundy domykania luk: ${gapFillRounds}`,
-        `Łącznie zapisano tras: ${created.length}, pominięto: ${persistSkipped.length}`,
-        ...persistLogs,
-        '',
-        ...(afterPersist.logs || []),
-      ],
-    };
-
-    if (routeAssignments.length === 0 && labelAssignments.length === 0) {
-      return res.json({
-        message: 'Brak pustych slotów tras do uzupełnienia i brak brakujących DW5.',
-        created: 0,
-        labelsCreated: 0,
-        assignments: [],
-        debug,
-      });
-    }
-
-    let message = '';
-    if (created.length > 0) {
-      message = `Uzupełniono ${created.length} przypisań tras`;
-    }
-    if (labelsCreated.length > 0) {
-      message += message
-        ? ` i ${labelsCreated.length} etykiet DW5.`
-        : `Dodano ${labelsCreated.length} brakujących etykiet DW5 (po ręcznych trasach sobotnich).`;
-    }
-    if (!message) message = 'Grafik bez zmian.';
-
-    const gapHint =
-      afterPersist.summary?.emptyWithAssignableRoutes > 0
-        ? ` Uwaga: ${afterPersist.summary.emptyWithAssignableRoutes} pustych dni nadal ma dostępne trasy — zobacz log diagnostyczny.`
-        : '';
-
-    return res.json({
-      message: message + gapHint,
-      created: created.length,
-      labelsCreated: labelsCreated.length,
-      assignments: created,
-      labels: labelsCreated,
-      debug,
+    return res.status(202).json({
+      jobId: job.id,
+      message:
+        'Uzupełnianie tras uruchomione w tle. Powiadomienie pojawi się w nagłówku po zakończeniu.',
     });
   } catch (error) {
     console.error('Błąd w autoFillRoutes:', error);
     return res.status(500).json({
-      message: 'Błąd auto-uzupełniania grafiku',
+      message: 'Nie udało się uruchomić auto-uzupełniania',
       error: error.message,
     });
   }

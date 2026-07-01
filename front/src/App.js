@@ -8,6 +8,7 @@ import LabelsPage from './pages/LabelsPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import Header from './components/Header';
+import { NotificationsProvider } from './context/NotificationsContext';
 
 function readToken() {
   return localStorage.getItem('token');
@@ -27,10 +28,11 @@ function App() {
   }, []);
 
   return (
-    <div>
-      {token && <Header onLogout={() => setToken(null)} />}
+    <NotificationsProvider>
+      <div>
+        {token && <Header onLogout={() => setToken(null)} />}
 
-      <Routes>
+        <Routes>
         {token ? (
           <>
             <Route path="/" element={<HomePage />} />
@@ -47,7 +49,8 @@ function App() {
           </>
         )}
       </Routes>
-    </div>
+      </div>
+    </NotificationsProvider>
   );
 }
 
