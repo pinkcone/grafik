@@ -757,6 +757,12 @@ const routeCheckOptions = (ctx, overrides = {}) => ({
   ...overrides,
 });
 
+/**
+ * Auto-fill nie obsadza tras opcjonalnych (requires_staffing=false).
+ * REZERWA, DS, Rezerwa itd. zostają puste — tylko ręcznie.
+ */
+const shouldAutoFillRoute = (route) => routeRequiresStaffing(route);
+
 /** Trasy widoczne w dropdownie dla pracownika (jak ScheduleView). */
 const getRoutesAvailableForEmployeeOnDay = (employee, date, ctx) => {
   const assignedToOthers = new Set(
@@ -771,6 +777,7 @@ const getRoutesAvailableForEmployeeOnDay = (employee, date, ctx) => {
   );
 
   const candidates = ctx.routes.filter((r) => {
+    if (!shouldAutoFillRoute(r)) return false;
     if (assignedToOthers.has(r.id.toString())) return false;
     const taken = findRouteAssignment(date, r.id, ctx.workingSchedules);
     if (taken && taken.employee_id?.toString() !== employee.id.toString()) {
@@ -808,6 +815,7 @@ const assignRouteToEmployee = (employee, route, date, ctx) => {
   )) {
     return false;
   }
+  if (!shouldAutoFillRoute(route)) return false;
 
   const pairRoute = findPairRoute(route, ctx.routes);
   if (!pushAssignment(ctx, { date, route_id: route.id, employee_id: employee.id })) {
@@ -1146,6 +1154,7 @@ const findBestRouteForEmployeeOnDay = (employee, date, ctx, options = {}) => {
 
   for (const route of ctx.routes) {
     if (!isRouteOperatingOnDate(route, date)) continue;
+    if (!shouldAutoFillRoute(route)) continue;
     if (findRouteAssignment(date, route.id, ctx.workingSchedules)) continue;
     if (!canEmployeeTakeRouteOnDay(
       employee,
@@ -1577,6 +1586,7 @@ const tryFillEmptyDayForEmployee = (employee, date, ctx) => {
   }
 
   const openRoutes = sortOpenRoutesForFill(ctx.routes, date, ctx)
+    .filter(routeRequiresStaffing)
     .map((r) => ({
       route: r,
       score: scoreRouteForEmployeeHours(employee, r, ctx, { forceCoverage: true, date }),
@@ -1637,7 +1647,7 @@ const tryFillEmptyDayForEmployee = (employee, date, ctx) => {
     return true;
   }
 
-  for (const r of sortOpenRoutesForFill(ctx.routes, date, ctx)) {
+  for (const r of sortOpenRoutesForFill(ctx.routes, date, ctx).filter(routeRequiresStaffing)) {
     if (findRouteAssignment(date, r.id, ctx.workingSchedules)) {
       if (tryCapabilitySwapForRoute(r, date, ctx) && !isEmployeeWeekdayEmpty(employee.id, date, ctx)) {
         return true;
@@ -1678,7 +1688,9 @@ const fillRemainingEmptyEmployeeDays = (ctx) => {
         }
       }
 
-      const stillOpen = sortOpenRoutesForFill(ctx.routes, date, ctx);
+      const stillOpen = sortOpenRoutesForFill(ctx.routes, date, ctx).filter(
+        routeRequiresStaffing
+      );
       for (const route of stillOpen) {
         if (findRouteAssignment(date, route.id, ctx.workingSchedules)) continue;
 
@@ -1994,7 +2006,9 @@ const fillAllOperatingRouteSlots = (ctx) => {
     guard += 1;
 
     for (const date of listNonSundayDates(ctx.month, ctx.year)) {
-      const openRoutes = sortOpenRoutesForFill(ctx.routes, date, ctx);
+      const openRoutes = sortOpenRoutesForFill(ctx.routes, date, ctx).filter(
+        routeRequiresStaffing
+      );
 
       for (const route of openRoutes) {
         if (findRouteAssignment(date, route.id, ctx.workingSchedules)) continue;

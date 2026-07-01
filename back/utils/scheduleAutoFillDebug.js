@@ -2,6 +2,7 @@ const {
   getAssignmentBlockReason,
   findPairRoute,
   canAssignEmployeeToRouteWithPair,
+  routeRequiresStaffing,
 } = require('./routeAssignment');
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 const { getEmployeeRouteSlotCountOnDay } = require('./scheduleConstraints');
@@ -302,19 +303,36 @@ const buildScheduleGapReport = ({
   logs.push('--- Nieobsadzone trasy wg dni (pn–sb) ---');
   for (const date of listNonSundayDates(month, year)) {
     const dayNum = parseInt(date.split('-')[2], 10);
-    const emptyRoutes = routes
+    const emptyMandatory = routes
       .filter((r) => isRouteOperatingOnDate(r, date))
+      .filter((r) => routeRequiresStaffing(r))
+      .filter((r) => !findRouteAssignment(date, r.id, schedules))
+      .map((r) => r.name);
+    const emptyOptional = routes
+      .filter((r) => isRouteOperatingOnDate(r, date))
+      .filter((r) => !routeRequiresStaffing(r))
       .filter((r) => !findRouteAssignment(date, r.id, schedules))
       .map((r) => r.name);
 
-    unstaffedByDate.push({ date, day: dayNum, routes: emptyRoutes });
+    unstaffedByDate.push({
+      date,
+      day: dayNum,
+      mandatory: emptyMandatory,
+      optional: emptyOptional,
+      routes: [...emptyMandatory, ...emptyOptional],
+    });
 
-    if (emptyRoutes.length === 0) {
+    if (emptyMandatory.length === 0 && emptyOptional.length === 0) {
       logs.push(`${date} (dz.${dayNum}): wszystkie trasy obsadzone`);
     } else {
-      logs.push(
-        `${date} (dz.${dayNum}): ${emptyRoutes.length} nieobsadzonych → ${emptyRoutes.join(' | ')}`
-      );
+      const parts = [];
+      if (emptyMandatory.length > 0) {
+        parts.push(`obowiązkowe (${emptyMandatory.length}): ${emptyMandatory.join(' | ')}`);
+      }
+      if (emptyOptional.length > 0) {
+        parts.push(`opcjonalne (${emptyOptional.length}): ${emptyOptional.join(' | ')}`);
+      }
+      logs.push(`${date} (dz.${dayNum}): ${parts.join(' · ')}`);
     }
   }
 
