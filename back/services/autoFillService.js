@@ -12,7 +12,7 @@ const { isSaturday } = require('../utils/scheduleRules');
 
 // Podbijaj przy każdej istotnej zmianie algorytmu — dzięki temu w logu widać,
 // że działa świeża wersja, a nie zbuforowany stary run.
-const AUTOFILL_ALGORITHM_VERSION = 'v2026.07.01c-mandatory-first-no-optional-autofill';
+const AUTOFILL_ALGORITHM_VERSION = 'v2026.07.06-weekday-start-progression';
 
 const parseWorkingHours = (wh) => {
   if (!wh) return null;

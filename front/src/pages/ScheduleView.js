@@ -624,6 +624,39 @@ function ScheduleView({ cityId }) {
     }
   };
 
+  // Usuwa z dnia tylko wpisy z auto-uzupełniania (trasy i etykiety algorytmu, np. DW5).
+  // Ręczne trasy i etykiety zostają nietknięte.
+  const clearDayAuto = async (day) => {
+    const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const entries = schedules.filter(
+      s => s.date === date && (s.auto_filled === true || s.auto_filled === 1)
+    );
+
+    if (entries.length === 0) {
+      alert('Brak wpisów z auto-uzupełniania w tym dniu.');
+      setOpenDayMenu(null);
+      return;
+    }
+
+    const ok = window.confirm(
+      `Usunąć wpisy z auto-uzupełniania w dniu ${day}.${month}.${year}?\n` +
+      `Usunie ${entries.length} wpis(ów) dodanych przez algorytm (trasy i etykiety, np. DW5). Ręczne wpisy zostaną.`
+    );
+    if (!ok) return;
+
+    setOpenDayMenu(null);
+
+    try {
+      await Promise.all(entries.map(e => removeScheduleEntry(e.id)));
+      await fetchSchedule();
+      await fetchQuarterSchedules();
+    } catch (e) {
+      alert(`Nie udało się wyczyścić dnia: ${e.message || e}`);
+      await fetchSchedule();
+      await fetchQuarterSchedules();
+    }
+  };
+
   // Widok TRAS – przypisanie/odpięcie pracownika.
   // Gdy przypisujemy pracownika do trasy, próbujemy dodać bliźniaczą TYLKO gdy
   // nie jest zajęta przez innego. Przy odpinaniu – nie dotykamy bliźniaczej.
@@ -856,15 +889,15 @@ const handleExportCSV = () => {
 
   const handleClearMonth = async () => {
     const prefix = `${year}-${String(month).padStart(2, '0')}`;
-    const routeCount = schedules.filter(
-      (s) => s.date.startsWith(prefix) && s.route_id && (s.auto_filled === true || s.auto_filled === 1)
+    const autoCount = schedules.filter(
+      (s) => s.date.startsWith(prefix) && (s.auto_filled === true || s.auto_filled === 1)
     ).length;
 
     const ok = window.confirm(
-      `Wyczyścić trasy z auto-uzupełniania za ${month}.${year}?\n` +
-      (routeCount > 0
-        ? `Usunie ${routeCount} tras dodanych przez „Uzupełnij trasy”. Ręczne wpisy i etykiety zostaną.`
-        : 'Brak tras z auto-uzupełniania do usunięcia w tym miesiącu.')
+      `Wyczyścić wpisy z auto-uzupełniania za ${month}.${year}?\n` +
+      (autoCount > 0
+        ? `Usunie ${autoCount} wpisów dodanych przez „Uzupełnij trasy” (trasy i etykiety, np. DW5). Ręczne wpisy zostaną.`
+        : 'Brak wpisów z auto-uzupełniania do usunięcia w tym miesiącu.')
     );
     if (!ok) return;
 
@@ -1186,11 +1219,19 @@ const prepareRoutesSheet = () => {
     >
       <button
         type="button"
+        className="schedule-day-menu__item"
+        role="menuitem"
+        onClick={() => clearDayAuto(openDayMenu.day)}
+      >
+        Wyczyść auto (trasy + DW5)
+      </button>
+      <button
+        type="button"
         className="schedule-day-menu__item schedule-day-menu__item--danger"
         role="menuitem"
         onClick={() => clearDay(openDayMenu.day)}
       >
-        Wyczyść dzień
+        Wyczyść dzień (wszystko)
       </button>
     </div>,
     document.body
@@ -1248,7 +1289,7 @@ const prepareRoutesSheet = () => {
           Przypisz na cały miesiąc
         </button>
         <button type="button" className="btn-danger" onClick={handleClearMonth}>
-          Wyczyść trasy miesiąca
+          Wyczyść auto miesiąca
         </button>
       </div>
 

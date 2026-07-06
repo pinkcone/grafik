@@ -42,6 +42,7 @@ const {
   getEmployeeMonthHours,
   getQuarterMonths,
   routesTimeOverlap,
+  getRouteTimeSegments,
 } = require('./scheduleHours');
 const { buildAutoFillAlgorithmReport } = require('./scheduleAutoFillDebug');
 
@@ -82,6 +83,77 @@ const getWeekWorkDates = (dateStr) => {
   const out = [];
   for (let i = 0; i < 6; i += 1) out.push(shiftDateStr(monday, i));
   return out;
+};
+
+/** Najwcześniejszy start trasy w minutach (albo null, gdy brak godzin). */
+const getRouteStartMinutes = (route) => {
+  const segs = getRouteTimeSegments(route);
+  if (!segs.length) return null;
+  return Math.min(...segs.map((s) => s.start));
+};
+
+/**
+ * Reguła nierosnących wstecz godzin startu w obrębie tygodnia (pn–pt):
+ * w ciągu kolejnych dni roboczych start trasy nie może być wcześniejszy niż
+ * start poprzedniego dnia roboczego (i nie późniejszy niż następnego).
+ * Reset: dowolny label (dzień wolny) albo weekend. Soboty/niedziele są ignorowane.
+ * Zwraca true, jeśli przypisanie `route` w dniu `date` NIE łamie reguły.
+ */
+const respectsWeekdayStartProgression = (employeeId, route, date, schedules, routes) => {
+  const wd = getIsoWeekday(date);
+  if (wd < 1 || wd > 5) return true; // reguła tylko pn–pt
+
+  const newStart = getRouteStartMinutes(route);
+  if (newStart == null) return true; // trasa bez godzin — nie ograniczamy
+
+  const empId = employeeId.toString();
+  const weekdays = getWeekWorkDates(date).filter((d) => {
+    const w = getIsoWeekday(d);
+    return w >= 1 && w <= 5;
+  });
+
+  // Stan pracownika w tym tygodniu: dla każdego dnia label? i najwcześniejszy start.
+  const dayInfo = new Map();
+  for (const d of weekdays) dayInfo.set(d, { label: false, start: null });
+  for (const s of schedules) {
+    if (s.employee_id?.toString() !== empId) continue;
+    const info = dayInfo.get(s.date);
+    if (!info) continue;
+    if (s.label != null && String(s.label).trim() !== '') info.label = true;
+    if (s.route_id) {
+      const r = routes.find((rt) => rt.id.toString() === s.route_id.toString());
+      const st = getRouteStartMinutes(r);
+      if (st != null && (info.start == null || st < info.start)) info.start = st;
+    }
+  }
+
+  const idx = weekdays.indexOf(date);
+
+  // Dolny limit — najbliższy wcześniejszy dzień roboczy z trasą (do resetu labelem).
+  let lowerBound = null;
+  for (let i = idx - 1; i >= 0; i -= 1) {
+    const info = dayInfo.get(weekdays[i]);
+    if (info.label) break; // reset
+    if (info.start != null) {
+      lowerBound = info.start;
+      break;
+    }
+  }
+
+  // Górny limit — najbliższy późniejszy dzień roboczy z trasą (do resetu labelem).
+  let upperBound = null;
+  for (let i = idx + 1; i < weekdays.length; i += 1) {
+    const info = dayInfo.get(weekdays[i]);
+    if (info.label) break; // reset
+    if (info.start != null) {
+      upperBound = info.start;
+      break;
+    }
+  }
+
+  if (lowerBound != null && newStart < lowerBound) return false;
+  if (upperBound != null && newStart > upperBound) return false;
+  return true;
 };
 
 /** Wpis z trasą lub etykietą — puste placeholdery (assignment_type none) nie blokują auto-fill. */
@@ -208,6 +280,13 @@ const canEmployeeTakeRouteOnDay = (
   }
 
   if (!canAssignEmployeeToRouteWithPair(employee, route, routes, date, schedules)) {
+    return false;
+  }
+
+  if (
+    !options.skipStartProgression &&
+    !respectsWeekdayStartProgression(employee.id, route, date, schedules, routes)
+  ) {
     return false;
   }
 

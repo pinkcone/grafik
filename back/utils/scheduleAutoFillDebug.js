@@ -6,13 +6,14 @@ const {
 } = require('./routeAssignment');
 const { hasEmployeeLabelOnDay } = require('./scheduleLabels');
 const { getEmployeeRouteSlotCountOnDay } = require('./scheduleConstraints');
-const { isRouteOperatingOnDate } = require('./routeOperatingDays');
+const { isRouteOperatingOnDate, getIsoWeekday } = require('./routeOperatingDays');
 const {
   getTargetMonthHours,
   getTargetQuarterHours,
   getEmployeeMonthHours,
   getQuarterMonths,
   getEmployeePartTime,
+  getRouteTimeSegments,
 } = require('./scheduleHours');
 const { isSaturday, getSaturdayDw5BlockReason } = require('./scheduleRules');
 
@@ -48,6 +49,79 @@ const employeeDisplayName = (employee) => {
   if (!employee) return '?';
   const name = `${employee.last_name || ''} ${employee.first_name || ''}`.trim();
   return name || `#${employee.id}`;
+};
+
+const shiftDateStr = (dateStr, days) => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+};
+
+const getRouteStartMinutes = (route) => {
+  const segs = getRouteTimeSegments(route);
+  if (!segs.length) return null;
+  return Math.min(...segs.map((s) => s.start));
+};
+
+/**
+ * Ta sama reguła co w algorytmie: w tygodniu (pn–pt) start trasy nie może być
+ * wcześniejszy niż poprzedniego dnia roboczego ani późniejszy niż następnego.
+ * Reset: label lub weekend. Zwraca powód blokady albo null.
+ */
+const getWeekdayStartProgressionBlock = (employeeId, route, date, schedules, routes) => {
+  const wd = getIsoWeekday(date);
+  if (wd < 1 || wd > 5) return null;
+  const newStart = getRouteStartMinutes(route);
+  if (newStart == null) return null;
+
+  const empId = employeeId.toString();
+  const monday = shiftDateStr(date, 1 - wd);
+  const weekdays = [];
+  for (let i = 0; i < 5; i += 1) weekdays.push(shiftDateStr(monday, i));
+
+  const dayInfo = new Map();
+  for (const d of weekdays) dayInfo.set(d, { label: false, start: null });
+  for (const s of schedules) {
+    if (s.employee_id?.toString() !== empId) continue;
+    const info = dayInfo.get(s.date);
+    if (!info) continue;
+    if (s.label != null && String(s.label).trim() !== '') info.label = true;
+    if (s.route_id) {
+      const r = routes.find((rt) => rt.id.toString() === s.route_id.toString());
+      const st = getRouteStartMinutes(r);
+      if (st != null && (info.start == null || st < info.start)) info.start = st;
+    }
+  }
+
+  const idx = weekdays.indexOf(date);
+  let lowerBound = null;
+  for (let i = idx - 1; i >= 0; i -= 1) {
+    const info = dayInfo.get(weekdays[i]);
+    if (info.label) break;
+    if (info.start != null) {
+      lowerBound = info.start;
+      break;
+    }
+  }
+  let upperBound = null;
+  for (let i = idx + 1; i < weekdays.length; i += 1) {
+    const info = dayInfo.get(weekdays[i]);
+    if (info.label) break;
+    if (info.start != null) {
+      upperBound = info.start;
+      break;
+    }
+  }
+
+  const fmt = (min) => `${String(Math.floor(min / 60) % 24).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+  if (lowerBound != null && newStart < lowerBound) {
+    return `Start ${fmt(newStart)} wcześniejszy niż wcześniejszy dzień w tygodniu (${fmt(lowerBound)})`;
+  }
+  if (upperBound != null && newStart > upperBound) {
+    return `Start ${fmt(newStart)} późniejszy niż kolejny dzień w tygodniu (${fmt(upperBound)})`;
+  }
+  return null;
 };
 
 const getQuarterHourGapForSchedules = (employee, schedules, quarterSchedules, routes, month, year) => {
@@ -90,6 +164,9 @@ const explainRouteForEmployee = (employee, route, date, schedules, routes, optio
     if (block) reasons.push(block);
     else reasons.push('Nie spełnia wymagań trasy (para/uprawnienia)');
   }
+
+  const startBlock = getWeekdayStartProgressionBlock(employee.id, route, date, schedules, routes);
+  if (startBlock) reasons.push(startBlock);
 
   if (
     isSaturday(date) &&

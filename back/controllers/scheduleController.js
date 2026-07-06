@@ -262,7 +262,8 @@ exports.autoFillRoutes = async (req, res) => {
 
 /**
  * DELETE /api/schedule/city/:cityId/month?month=MM&year=YYYY
- * Usuwa trasy dodane przez „Uzupełnij trasy” (auto_filled). Ręczne wpisy zostają.
+ * Usuwa wpisy dodane przez „Uzupełnij trasy” (auto_filled) — trasy ORAZ etykiety
+ * wstawione przez algorytm (np. DW5 po sobocie). Ręczne wpisy zostają.
  */
 exports.clearMonth = async (req, res) => {
   const { cityId } = req.params;
@@ -292,15 +293,14 @@ exports.clearMonth = async (req, res) => {
         user_id,
         employee_id: { [Op.in]: employeeIds },
         date: { [Op.between]: [startDate, endDate] },
-        route_id: { [Op.ne]: null },
         auto_filled: true,
       },
     });
 
     return res.json({
       message: deleted > 0
-        ? `Usunięto ${deleted} tras z auto-uzupełniania za ${monthNum}.${yearNum}. Ręczne wpisy i etykiety pozostały.`
-        : `Brak tras z auto-uzupełniania do usunięcia za ${monthNum}.${yearNum}.`,
+        ? `Usunięto ${deleted} wpisów z auto-uzupełniania za ${monthNum}.${yearNum} (trasy i etykiety, np. DW5). Ręczne wpisy pozostały.`
+        : `Brak wpisów z auto-uzupełniania do usunięcia za ${monthNum}.${yearNum}.`,
       deleted,
     });
   } catch (error) {
