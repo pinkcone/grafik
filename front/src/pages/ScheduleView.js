@@ -59,6 +59,13 @@ function ScheduleView({ cityId }) {
   };
 
   const [viewType, setViewType] = useState('employees');
+  const [highlightedEmployeeId, setHighlightedEmployeeId] = useState(null);
+
+  const toggleEmployeeHighlight = (employeeId) => {
+    setHighlightedEmployeeId((prev) =>
+      (prev?.toString() === employeeId.toString() ? null : employeeId)
+    );
+  };
 
   const { employees, routes, labels, schedules, quarterSchedules, refetch } =
     useScheduleData(cityId, month, year, token);
@@ -100,6 +107,10 @@ function ScheduleView({ cityId }) {
   useEffect(() => {
     setOpenDayMenu(null);
   }, [month, year, viewType]);
+
+  useEffect(() => {
+    setHighlightedEmployeeId(null);
+  }, [month, year, cityId]);
 
   useEffect(() => {
     if (openDayMenu == null) return;
@@ -817,6 +828,8 @@ function ScheduleView({ cityId }) {
           days={days}
           year={year}
           month={month}
+          highlightedEmployeeId={highlightedEmployeeId}
+          onToggleEmployeeHighlight={toggleEmployeeHighlight}
           renderDayHeader={renderDayHeader}
           getCellSchedulesAll={getCellSchedulesAll}
           getAvailableOptionsForEmployeeCell={getAvailableOptionsForEmployeeCell}
