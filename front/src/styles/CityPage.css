@@ -28,3 +28,39 @@
   width: 100%;
   text-align: left;
 }
+
+/* Strona szczegółów miasta — zakładki: pracownicy / trasy / grafik */
+.city-detail {
+  max-width: 100%;
+}
+
+.city-detail__header {
+  margin-bottom: 4px;
+}
+
+.city-detail__title {
+  margin: 0 0 8px;
+  color: var(--btn-primary, #1a2e30);
+}
+
+.city-detail__tabs {
+  margin-bottom: 20px;
+}
+
+.city-detail__panel {
+  margin-top: 0;
+}
+
+.city-detail__panel-title {
+  margin: 0 0 12px;
+  color: var(--btn-primary, #1a2e30);
+  font-size: 1.15rem;
+}
+
+.city-detail__panel--schedule {
+  /* Grafik ma własny nagłówek i toolbar — bez dodatkowego paddingu */
+}
+
+.city-detail__panel--schedule .schedule-toolbar:first-of-type {
+  margin-top: 0;
+}

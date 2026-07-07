@@ -10,16 +10,15 @@ import { formatOperatingDays, DEFAULT_OPERATING_DAYS, normalizeOperatingDays } f
 import { logEmployeeLicense, logRouteLicense, logLicenseReady } from '../utils/licenseLog';
 import RouteOperatingDaysPicker from '../components/RouteOperatingDaysPicker';
 import '../styles/RouteOperatingDaysPicker.css';
+import '../styles/CityPage.css';
 
 
 function CityDetailPage() {
   const { cityId } = useParams();
   const token = localStorage.getItem('token');
   const dialog = useDialog();
-  const [showSchedule, setShowSchedule] = useState(false);
-  // Dane podstawowe
   const [city, setCity] = useState(null);
-  const [activeTab, setActiveTab] = useState('employees'); // "employees" lub "routes"
+  const [activeTab, setActiveTab] = useState('employees'); // employees | routes | schedule
   const [allCities, setAllCities] = useState([]); // lista wszystkich miast (do selectów)
   const [cityRoutes, setCityRoutes] = useState([]); // trasy przypisane do tego miasta (do selectu powiązanej trasy)
 
@@ -356,9 +355,12 @@ function CityDetailPage() {
   };
 
   return (
-    <div>
-      <h2>Szczegóły Miasta: {city ? city.name : 'Ładowanie...'}</h2>
-      <div className="btn-tabs">
+    <div className="city-detail">
+      <header className="city-detail__header">
+        <h2 className="city-detail__title">{city ? city.name : 'Ładowanie…'}</h2>
+      </header>
+
+      <nav className="btn-tabs city-detail__tabs" aria-label="Sekcje miasta">
         <button
           type="button"
           className={`btn-tab${activeTab === 'employees' ? ' btn-tab--active' : ''}`}
@@ -373,21 +375,18 @@ function CityDetailPage() {
         >
           Trasy
         </button>
-      </div>
-      <div className="btn-row">
         <button
           type="button"
-          className={showSchedule ? 'btn-secondary' : 'btn-primary'}
-          onClick={() => setShowSchedule(!showSchedule)}
+          className={`btn-tab${activeTab === 'schedule' ? ' btn-tab--active' : ''}`}
+          onClick={() => setActiveTab('schedule')}
         >
-          {showSchedule ? 'Ukryj grafik' : 'Ułóż grafik'}
+          Grafik
         </button>
-      </div>
+      </nav>
 
-{showSchedule && <ScheduleView cityId={cityId} />}
       {activeTab === 'employees' && (
-        <div>
-          <h3>Pracownicy</h3>
+        <section className="city-detail__panel" aria-labelledby="city-employees-heading">
+          <h3 id="city-employees-heading" className="city-detail__panel-title">Pracownicy</h3>
           <div className="btn-row">
             <button type="button" onClick={openEmployeeModalForAdd}>Dodaj pracownika</button>
           </div>
@@ -424,12 +423,12 @@ function CityDetailPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </section>
       )}
 
       {activeTab === 'routes' && (
-        <div>
-          <h3>Trasy</h3>
+        <section className="city-detail__panel" aria-labelledby="city-routes-heading">
+          <h3 id="city-routes-heading" className="city-detail__panel-title">Trasy</h3>
           <div className="btn-row">
             <button type="button" onClick={openRouteModalForAdd}>Dodaj trasę</button>
           </div>
@@ -491,7 +490,13 @@ function CityDetailPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </section>
+      )}
+
+      {activeTab === 'schedule' && (
+        <section className="city-detail__panel city-detail__panel--schedule" aria-labelledby="city-schedule-heading">
+          <ScheduleView cityId={cityId} />
+        </section>
       )}
 
       {/* Modal dla pracowników */}
