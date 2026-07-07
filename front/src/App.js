@@ -9,6 +9,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import Header from './components/Header';
 import { NotificationsProvider } from './context/NotificationsContext';
+import { DialogProvider } from './context/DialogContext';
 
 function readToken() {
   return localStorage.getItem('token');
@@ -29,6 +30,7 @@ function App() {
 
   return (
     <NotificationsProvider>
+      <DialogProvider>
       <div>
         {token && <Header onLogout={() => setToken(null)} />}
 
@@ -50,6 +52,7 @@ function App() {
         )}
       </Routes>
       </div>
+      </DialogProvider>
     </NotificationsProvider>
   );
 }

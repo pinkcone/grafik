@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { fetchNotificationDetail } from '../api/scheduleApi';
+import { useDialog } from '../context/DialogContext';
 
 const belongsHere = (n, cityId, month, year) =>
   String(n.cityId) === String(cityId) && n.month === month && n.year === year;
@@ -14,6 +15,8 @@ export default function useAutoFillNotifications({
   applyDebug,
   refetch,
 }) {
+  const dialog = useDialog();
+
   // 1) Zdarzenia okna (job-completed / job-failed)
   useEffect(() => {
     const applyDebugFromNotification = (n) => {
@@ -56,7 +59,7 @@ export default function useAutoFillNotifications({
     const onFailed = (e) => {
       const n = e.detail;
       if (!belongsHere(n, cityId, month, year)) return;
-      alert(`Auto-uzupełnianie nie powiodło się: ${n.error || n.message}`);
+      dialog.alert(`Auto-uzupełnianie nie powiodło się: ${n.error || n.message}`, { title: 'Błąd', danger: true });
     };
 
     window.addEventListener('grafik-job-completed', onCompleted);
@@ -65,7 +68,7 @@ export default function useAutoFillNotifications({
       window.removeEventListener('grafik-job-completed', onCompleted);
       window.removeEventListener('grafik-job-failed', onFailed);
     };
-  }, [cityId, month, year, applyDebug, refetch]);
+  }, [cityId, month, year, applyDebug, refetch, dialog]);
 
   // 2) Lista powiadomień z kontekstu (dogranie najnowszego ukończonego joba)
   useEffect(() => {

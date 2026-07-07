@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useDialog } from '../context/DialogContext';
 import '../styles/LoginPage.css';
 
 function RegisterPage() {
+  const dialog = useDialog();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -30,7 +32,7 @@ function RegisterPage() {
       if (!response.ok) {
         setError(data.message || 'Błąd podczas rejestracji');
       } else {
-        alert('Rejestracja zakończona powodzeniem!');
+        await dialog.alert('Rejestracja zakończona powodzeniem!', { title: 'Sukces' });
         navigate('/login');
       }
     } catch (err) {

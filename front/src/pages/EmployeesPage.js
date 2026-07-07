@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import Popup from '../components/Popup';
+import { useDialog } from '../context/DialogContext';
 import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
 import { formatYesNo } from '../utils/routeAssignment';
 import { logEmployeeLicense } from '../utils/licenseLog';
 
 function EmployeesPage() {
+  const dialog = useDialog();
   const [employees, setEmployees] = useState([]);
   const [sortColumn, setSortColumn] = useState('id');
   const [sortOrder, setSortOrder] = useState('asc');
@@ -82,7 +84,8 @@ function EmployeesPage() {
   };
 
   const handleDeleteEmployee = async (id) => {
-    if (!window.confirm('Czy na pewno usunąć pracownika?')) return;
+    const ok = await dialog.confirm('Czy na pewno usunąć pracownika?', { danger: true, confirmText: 'Usuń' });
+    if (!ok) return;
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`/api/employees/${id}`, {
@@ -90,7 +93,7 @@ function EmployeesPage() {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (res.ok) fetchEmployees();
-      else alert('Błąd przy usuwaniu pracownika');
+      else await dialog.alert('Błąd przy usuwaniu pracownika', { title: 'Błąd', danger: true });
     } catch (error) {
       // ignore
     }
@@ -132,7 +135,7 @@ function EmployeesPage() {
       } else {
         const err = await res.json().catch(() => ({}));
         logEmployeeLicense('4. odpowiedź API BŁĄD', { status: res.status, ...err });
-        alert(err.details || err.error || 'Błąd przy zapisie pracownika');
+        await dialog.alert(err.details || err.error || 'Błąd przy zapisie pracownika', { title: 'Błąd', danger: true });
       }
     } catch (error) {
       logEmployeeLicense('4. wyjątek sieci', { message: error.message });

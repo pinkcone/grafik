@@ -1,0 +1,51 @@
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 46, 48, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1100;
+  animation: dialog-fade 0.12s ease;
+}
+
+.dialog-card {
+  background: #fff;
+  padding: 22px 24px 18px;
+  border-radius: 14px;
+  min-width: 320px;
+  max-width: min(480px, 94vw);
+  box-shadow: 0 24px 60px rgba(26, 46, 48, 0.28);
+  animation: dialog-pop 0.14s ease;
+}
+
+.dialog-title {
+  margin: 0 0 10px;
+  font-size: 1.1rem;
+  color: var(--btn-primary);
+}
+
+.dialog-message {
+  white-space: pre-wrap;
+  line-height: 1.45;
+  color: #1f2d2e;
+  font-size: 0.95rem;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+@keyframes dialog-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dialog-pop {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}

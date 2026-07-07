@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Popup from '../components/Popup';
+import { useDialog } from '../context/DialogContext';
 import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
 import { formatYesNo } from '../utils/routeAssignment';
 import { formatOperatingDays, DEFAULT_OPERATING_DAYS, normalizeOperatingDays } from '../utils/routeOperatingDays';
@@ -8,6 +9,7 @@ import RouteOperatingDaysPicker from '../components/RouteOperatingDaysPicker';
 import '../styles/RouteOperatingDaysPicker.css';
 
 function RoutesPage() {
+  const dialog = useDialog();
   const [routes, setRoutes] = useState([]);
   const [cities, setCities] = useState([]); // Lista miast do selectów
   const [sortColumn, setSortColumn] = useState('id');
@@ -117,7 +119,8 @@ function RoutesPage() {
   };
 
   const handleDeleteRoute = async (id) => {
-    if (!window.confirm('Czy na pewno usunąć trasę?')) return;
+    const ok = await dialog.confirm('Czy na pewno usunąć trasę?', { danger: true, confirmText: 'Usuń' });
+    if (!ok) return;
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`/api/routes/${id}`, {
@@ -125,7 +128,7 @@ function RoutesPage() {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (res.ok) fetchRoutes();
-      else alert('Błąd przy usuwaniu trasy');
+      else await dialog.alert('Błąd przy usuwaniu trasy', { title: 'Błąd', danger: true });
     } catch (error) {
       // ignore
     }
@@ -133,7 +136,7 @@ function RoutesPage() {
 
   const addSegment = () => {
     if (!segmentStart || !segmentEnd) {
-      alert('Podaj zarówno godzinę rozpoczęcia, jak i zakończenia.');
+      dialog.alert('Podaj zarówno godzinę rozpoczęcia, jak i zakończenia.');
       return;
     }
     setSegments([...segments, { start: segmentStart, end: segmentEnd }]);
@@ -191,7 +194,7 @@ function RoutesPage() {
       } else {
         const err = await res.json().catch(() => ({}));
         logRouteLicense('4. odpowiedź API BŁĄD', { status: res.status, ...err });
-        alert(err.details || err.error || 'Błąd przy zapisie trasy');
+        await dialog.alert(err.details || err.error || 'Błąd przy zapisie trasy', { title: 'Błąd', danger: true });
       }
     } catch (error) {
       logRouteLicense('4. wyjątek sieci', { message: error.message });

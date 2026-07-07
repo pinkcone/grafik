@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Popup from '../components/Popup';
+import { useDialog } from '../context/DialogContext';
 import "../styles/CityPage.css";
 
 function CitiesPage() {
+  const dialog = useDialog();
   const [cities, setCities] = useState([]);
   const [sortOrder, setSortOrder] = useState('asc');
 
@@ -65,7 +67,8 @@ function CitiesPage() {
   };
 
   const handleDeleteCity = async (cityId) => {
-    if (!window.confirm('Czy na pewno chcesz usunąć to miasto?')) return;
+    const ok = await dialog.confirm('Czy na pewno chcesz usunąć to miasto?', { danger: true, confirmText: 'Usuń' });
+    if (!ok) return;
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`/api/cities/${cityId}`, {
@@ -76,7 +79,7 @@ function CitiesPage() {
         setIsActionsOpen(false);
         await fetchCities();
       } else {
-        alert('Błąd przy usuwaniu miasta');
+        await dialog.alert('Błąd przy usuwaniu miasta', { title: 'Błąd', danger: true });
       }
     } catch (error) {
       // ignore
@@ -104,7 +107,7 @@ function CitiesPage() {
       });
 
       if (!res.ok) {
-        alert(`Błąd przy ${formMode === 'add' ? 'dodawaniu' : 'edycji'} miasta`);
+        await dialog.alert(`Błąd przy ${formMode === 'add' ? 'dodawaniu' : 'edycji'} miasta`, { title: 'Błąd', danger: true });
         return;
       }
 

@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import Popup from '../components/Popup';
+import { useDialog } from '../context/DialogContext';
 import ScheduleView from './ScheduleView';
 import { LICENSE_CATEGORIES, LICENSE_CATEGORY_LABELS } from '../utils/licenseCategories';
 import { formatYesNo } from '../utils/routeAssignment';
@@ -14,6 +15,7 @@ import '../styles/RouteOperatingDaysPicker.css';
 function CityDetailPage() {
   const { cityId } = useParams();
   const token = localStorage.getItem('token');
+  const dialog = useDialog();
   const [showSchedule, setShowSchedule] = useState(false);
   // Dane podstawowe
   const [city, setCity] = useState(null);
@@ -190,7 +192,7 @@ function CityDetailPage() {
       } else {
         const err = await res.json().catch(() => ({}));
         logEmployeeLicense('4. odpowiedź API BŁĄD', { status: res.status, ...err });
-        alert(err.details || err.error || 'Błąd przy zapisie pracownika');
+        await dialog.alert(err.details || err.error || 'Błąd przy zapisie pracownika', { title: 'Błąd', danger: true });
       }
     } catch (error) {
       logEmployeeLicense('4. wyjątek sieci', { message: error.message });
@@ -198,7 +200,8 @@ function CityDetailPage() {
   };
 
   const handleEmployeeDelete = async (empId) => {
-    if (!window.confirm('Czy na pewno usunąć tego pracownika?')) return;
+    const ok = await dialog.confirm('Czy na pewno usunąć tego pracownika?', { danger: true, confirmText: 'Usuń' });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/employees/${empId}`, {
         method: 'DELETE',
@@ -207,7 +210,7 @@ function CityDetailPage() {
       if (res.ok) {
         fetchEmployees();
       } else {
-        alert('Błąd przy usuwaniu pracownika');
+        await dialog.alert('Błąd przy usuwaniu pracownika', { title: 'Błąd', danger: true });
       }
     } catch (error) {
       // ignore
@@ -263,7 +266,7 @@ function CityDetailPage() {
 
   const addSegment = () => {
     if (!segmentStart || !segmentEnd) {
-      alert('Podaj zarówno godzinę rozpoczęcia, jak i zakończenia.');
+      dialog.alert('Podaj zarówno godzinę rozpoczęcia, jak i zakończenia.');
       return;
     }
     setSegments([...segments, { start: segmentStart, end: segmentEnd }]);
@@ -327,7 +330,7 @@ function CityDetailPage() {
       } else {
         const err = await res.json().catch(() => ({}));
         logRouteLicense('4. odpowiedź API BŁĄD', { status: res.status, ...err });
-        alert(err.details || err.error || 'Błąd przy zapisie trasy');
+        await dialog.alert(err.details || err.error || 'Błąd przy zapisie trasy', { title: 'Błąd', danger: true });
       }
     } catch (error) {
       logRouteLicense('4. wyjątek sieci', { message: error.message });
@@ -335,7 +338,8 @@ function CityDetailPage() {
   };
 
   const handleRouteDelete = async (routeId) => {
-    if (!window.confirm('Czy na pewno usunąć tę trasę?')) return;
+    const ok = await dialog.confirm('Czy na pewno usunąć tę trasę?', { danger: true, confirmText: 'Usuń' });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/routes/${routeId}`, {
         method: 'DELETE',
@@ -344,7 +348,7 @@ function CityDetailPage() {
       if (res.ok) {
         fetchRoutes();
       } else {
-        alert('Błąd przy usuwaniu trasy');
+        await dialog.alert('Błąd przy usuwaniu trasy', { title: 'Błąd', danger: true });
       }
     } catch (error) {
       // ignore

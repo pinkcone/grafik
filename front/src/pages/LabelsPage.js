@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import Popup from '../components/Popup';
-
-const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
+import { useDialog } from '../context/DialogContext';
 
 function LabelsPage() {
   const token = localStorage.getItem('token');
+  const dialog = useDialog();
   const [labels, setLabels] = useState([]);
 
   // Stany dla modal (popup) – tryb dodawania/edycji
@@ -81,7 +81,7 @@ function LabelsPage() {
         fetchLabels();
         setIsModalOpen(false);
       } else {
-        alert("Błąd przy zapisie etykiety");
+        await dialog.alert('Błąd przy zapisie etykiety', { title: 'Błąd', danger: true });
       }
     } catch (error) {
       // ignore
@@ -89,7 +89,8 @@ function LabelsPage() {
   };
 
   const handleDelete = async (labelCode) => {
-    if (!window.confirm("Czy na pewno usunąć etykietę?")) return;
+    const ok = await dialog.confirm('Czy na pewno usunąć etykietę?', { danger: true, confirmText: 'Usuń' });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/labels/${labelCode}`, {
         method: 'DELETE',
@@ -98,7 +99,7 @@ function LabelsPage() {
       if (res.ok) {
         fetchLabels();
       } else {
-        alert("Błąd przy usuwaniu etykiety");
+        await dialog.alert('Błąd przy usuwaniu etykiety', { title: 'Błąd', danger: true });
       }
     } catch (error) {
       // ignore

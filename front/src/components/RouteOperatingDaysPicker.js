@@ -1,7 +1,10 @@
 import React from 'react';
 import { WEEKDAY_OPTIONS } from '../utils/routeOperatingDays';
+import { useDialog } from '../context/DialogContext';
 
 function RouteOperatingDaysPicker({ selectedDays, onChange }) {
+  const dialog = useDialog();
+
   const toggleDay = (day) => {
     const set = new Set(selectedDays);
     if (set.has(day)) {
@@ -11,7 +14,7 @@ function RouteOperatingDaysPicker({ selectedDays, onChange }) {
     }
     const next = [...set].sort((a, b) => a - b);
     if (next.length === 0) {
-      alert('Trasa musi kursować co najmniej jeden dzień w tygodniu.');
+      dialog.alert('Trasa musi kursować co najmniej jeden dzień w tygodniu.');
       return;
     }
     onChange(next);

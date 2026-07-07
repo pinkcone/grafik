@@ -4,6 +4,7 @@ import { canAssignEmployeeToRouteWithPair, getAssignmentBlockReason, findPairRou
 import { hasEmployeeLabelOnDay } from '../utils/scheduleLabels';
 import { getEmployeeRouteSlotCountOnDay, canEmployeeHaveAnotherRouteOnDay } from '../utils/scheduleConstraints';
 import { useNotifications } from '../context/NotificationsContext';
+import { useDialog } from '../context/DialogContext';
 import { getQuarterMonths, daysInMonth, calculateDuration } from '../utils/scheduleViewHelpers';
 import { exportScheduleXLSX, exportScheduleCSV } from '../utils/scheduleExport';
 import {
@@ -28,6 +29,7 @@ import '../styles/ScheduleDayMenu.css';
 function ScheduleView({ cityId }) {
   const token = localStorage.getItem('token');
   const { notifications, refresh: refreshNotifications } = useNotifications();
+  const dialog = useDialog();
 
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
@@ -197,14 +199,14 @@ function ScheduleView({ cityId }) {
       }
       await refetch();
     } catch (error) {
-      alert(`Błąd aktualizacji grafiku: ${error.message}`);
+      await dialog.alert(`Błąd aktualizacji grafiku: ${error.message}`, { title: 'Błąd', danger: true });
     }
   };
 
   // Edycja KONKRETNEGO wpisu (gdy w komórce jest wiele wpisów).
   const updateExistingEntryInEmployeeCell = async (entry, date, newValue) => {
     if (newValue.startsWith("D:")) {
-      const sure = window.confirm("Na pewno usunąć ten wpis?");
+      const sure = await dialog.confirm('Na pewno usunąć ten wpis?', { danger: true, confirmText: 'Usuń' });
       if (!sure) return;
       await deleteSchedule(entry.id);
       return;
@@ -234,7 +236,7 @@ function ScheduleView({ cityId }) {
       }
       await refetch();
     } catch (error) {
-      alert(`Błąd aktualizacji wpisu: ${error.message}`);
+      await dialog.alert(`Błąd aktualizacji wpisu: ${error.message}`, { title: 'Błąd', danger: true });
     }
   };
 
@@ -287,7 +289,7 @@ function ScheduleView({ cityId }) {
       await deleteScheduleEntry(scheduleId, token);
       await refetch();
     } catch (e) {
-      alert(`Nie udało się usunąć wpisu: ${e.message || e}`);
+      await dialog.alert(`Nie udało się usunąć wpisu: ${e.message || e}`, { title: 'Błąd', danger: true });
     }
   };
 
@@ -296,23 +298,23 @@ function ScheduleView({ cityId }) {
     const entries = schedules.filter(s => s.date === date);
 
     if (entries.length === 0) {
-      alert('Brak wpisów w tym dniu.');
       setOpenDayMenu(null);
+      await dialog.alert('Brak wpisów w tym dniu.');
       return;
     }
 
-    const ok = window.confirm(
-      `Wyczyścić dzień ${day}.${month}.${year}?\nUsunie ${entries.length} wpis(ów) z grafiku.`
+    setOpenDayMenu(null);
+    const ok = await dialog.confirm(
+      `Wyczyścić dzień ${day}.${month}.${year}?\nUsunie ${entries.length} wpis(ów) z grafiku.`,
+      { title: 'Wyczyść dzień', danger: true, confirmText: 'Wyczyść' }
     );
     if (!ok) return;
-
-    setOpenDayMenu(null);
 
     try {
       await Promise.all(entries.map(e => deleteScheduleEntry(e.id, token)));
       await refetch();
     } catch (e) {
-      alert(`Nie udało się wyczyścić dnia: ${e.message || e}`);
+      await dialog.alert(`Nie udało się wyczyścić dnia: ${e.message || e}`, { title: 'Błąd', danger: true });
       await refetch();
     }
   };
@@ -325,24 +327,24 @@ function ScheduleView({ cityId }) {
     );
 
     if (entries.length === 0) {
-      alert('Brak wpisów z auto-uzupełniania w tym dniu.');
       setOpenDayMenu(null);
+      await dialog.alert('Brak wpisów z auto-uzupełniania w tym dniu.');
       return;
     }
 
-    const ok = window.confirm(
+    setOpenDayMenu(null);
+    const ok = await dialog.confirm(
       `Usunąć wpisy z auto-uzupełniania w dniu ${day}.${month}.${year}?\n` +
-      `Usunie ${entries.length} wpis(ów) dodanych przez algorytm (trasy i etykiety, np. DW5). Ręczne wpisy zostaną.`
+      `Usunie ${entries.length} wpis(ów) dodanych przez algorytm (trasy i etykiety, np. DW5). Ręczne wpisy zostaną.`,
+      { title: 'Wyczyść auto', danger: true, confirmText: 'Usuń auto' }
     );
     if (!ok) return;
-
-    setOpenDayMenu(null);
 
     try {
       await Promise.all(entries.map(e => deleteScheduleEntry(e.id, token)));
       await refetch();
     } catch (e) {
-      alert(`Nie udało się wyczyścić dnia: ${e.message || e}`);
+      await dialog.alert(`Nie udało się wyczyścić dnia: ${e.message || e}`, { title: 'Błąd', danger: true });
       await refetch();
     }
   };
@@ -356,7 +358,7 @@ function ScheduleView({ cityId }) {
       const currentCell = findScheduleForRoute(date, routeId);
 
       if (employeeId === 'DELETE' && currentCell) {
-        const ok = window.confirm("Na pewno usunąć przypisanie tej trasy w tym dniu?");
+        const ok = await dialog.confirm('Na pewno usunąć przypisanie tej trasy w tym dniu?', { danger: true, confirmText: 'Usuń' });
         if (!ok) return;
         await deleteSchedule(currentCell.id);
         return;
@@ -373,7 +375,7 @@ function ScheduleView({ cityId }) {
 
       await refetch();
     } catch (error) {
-      alert(`Błąd aktualizacji grafiku: ${error.message}`);
+      await dialog.alert(`Błąd aktualizacji grafiku: ${error.message}`, { title: 'Błąd', danger: true });
     }
   };
 
@@ -437,33 +439,35 @@ function ScheduleView({ cityId }) {
       (s) => s.date.startsWith(prefix) && (s.auto_filled === true || s.auto_filled === 1)
     ).length;
 
-    const ok = window.confirm(
+    const ok = await dialog.confirm(
       `Wyczyścić wpisy z auto-uzupełniania za ${month}.${year}?\n` +
       (autoCount > 0
         ? `Usunie ${autoCount} wpisów dodanych przez „Uzupełnij trasy” (trasy i etykiety, np. DW5). Ręczne wpisy zostaną.`
-        : 'Brak wpisów z auto-uzupełniania do usunięcia w tym miesiącu.')
+        : 'Brak wpisów z auto-uzupełniania do usunięcia w tym miesiącu.'),
+      { title: 'Wyczyść auto miesiąca', danger: true, confirmText: 'Wyczyść' }
     );
     if (!ok) return;
 
     try {
       const { ok: resOk, status, data } = await apiClearMonth(cityId, month, year, token);
       if (!resOk) throw new Error(data.message || `HTTP ${status}`);
-      alert(data.message || 'Miesiąc wyczyszczony.');
+      await dialog.alert(data.message || 'Miesiąc wyczyszczony.');
       await refetch();
     } catch (error) {
-      alert(`Nie udało się wyczyścić miesiąca: ${error.message}`);
+      await dialog.alert(`Nie udało się wyczyścić miesiąca: ${error.message}`, { title: 'Błąd', danger: true });
     }
   };
 
   const handleAutoFillRoutes = async () => {
-    const ok = window.confirm(
+    const ok = await dialog.confirm(
       'Uzupełnić puste sloty tras w tym miesiącu?\n\n' +
       'Najpierw każdy wolny kierowca dostaje po jednej trasie dziennie (bez drugiej trasy).\n' +
       'Godziny są rozkładane wg części etatu (pn–pt × 8h × etat).\n' +
       'Etykieta i trasa tego samego dnia się wykluczają.\n' +
       'Trasy sobotnie z auto-uzupełniania dostają DW5, jeśli jest wolny dzień w nast. tygodniu.\n' +
       'Brakujące DW5 po ręcznie dodanych trasach sobotnich też zostaną dopisane.\n' +
-      'Etykiety (urlopy itd.) nie zostaną zmienione.'
+      'Etykiety (urlopy itd.) nie zostaną zmienione.',
+      { title: 'Uzupełnij trasy', confirmText: 'Uzupełnij' }
     );
     if (!ok) return;
 
@@ -473,7 +477,7 @@ function ScheduleView({ cityId }) {
 
       if (status === 202) {
         refreshNotifications();
-        alert(
+        await dialog.alert(
           data.message ||
             'Uzupełnianie tras działa na serwerze w tle. Możesz zamknąć przeglądarkę — ' +
               'wynik pojawi się w powiadomieniach (dzwonek w nagłówku).'
@@ -482,27 +486,28 @@ function ScheduleView({ cityId }) {
       }
 
       if (data.debug) applyDebug(data.debug);
-      alert(data.message || `Uzupełniono ${data.created || 0} przypisań.`);
+      await dialog.alert(data.message || `Uzupełniono ${data.created || 0} przypisań.`);
       await refetch();
     } catch (error) {
-      alert(`Nie udało się uruchomić auto-uzupełniania: ${error.message}`);
+      await dialog.alert(`Nie udało się uruchomić auto-uzupełniania: ${error.message}`, { title: 'Błąd', danger: true });
     }
   };
 
   const handleAssignMonth = async (e) => {
     e.preventDefault();
     if (!assignMonthEmployeeId || !assignMonthRouteId) {
-      alert('Wybierz pracownika i trasę.');
+      await dialog.alert('Wybierz pracownika i trasę.');
       return;
     }
 
     const employee = employees.find((emp) => emp.id.toString() === assignMonthEmployeeId);
     const route = routes.find((rt) => rt.id.toString() === assignMonthRouteId);
-    const ok = window.confirm(
+    const ok = await dialog.confirm(
       `Przypisać ${employee?.last_name} ${employee?.first_name} na trasę „${route?.name}” ` +
       `na cały ${month}.${year}?\n\n` +
       'Tylko wolne dni kursowania tej trasy, bez nadpisywania istniejących przypisań.\n' +
-      'DW5 po sobotach zostanie dopisane automatycznie, jeśli jest wolny dzień w nast. tygodniu.'
+      'DW5 po sobotach zostanie dopisane automatycznie, jeśli jest wolny dzień w nast. tygodniu.',
+      { title: 'Przypisz na cały miesiąc', confirmText: 'Przypisz' }
     );
     if (!ok) return;
 
@@ -519,13 +524,13 @@ function ScheduleView({ cityId }) {
         token
       );
       if (!resOk) throw new Error(data.message || `HTTP ${status}`);
-      alert(data.message || `Przypisano ${data.created || 0} dni.`);
+      await dialog.alert(data.message || `Przypisano ${data.created || 0} dni.`);
       setAssignMonthOpen(false);
       setAssignMonthEmployeeId('');
       setAssignMonthRouteId('');
       await refetch();
     } catch (error) {
-      alert(`Nie udało się przypisać trasy: ${error.message}`);
+      await dialog.alert(`Nie udało się przypisać trasy: ${error.message}`, { title: 'Błąd', danger: true });
     } finally {
       setAssignMonthLoading(false);
     }
@@ -547,15 +552,15 @@ function ScheduleView({ cityId }) {
   const handleBulkAssign = async (e) => {
     e.preventDefault();
     if (!bulkEmployeeId) {
-      alert('Wybierz pracownika.');
+      await dialog.alert('Wybierz pracownika.');
       return;
     }
     if (!bulkValue) {
-      alert('Wybierz trasę lub etykietę.');
+      await dialog.alert('Wybierz trasę lub etykietę.');
       return;
     }
     if (bulkDays.length === 0) {
-      alert('Zaznacz przynajmniej jeden dzień w kalendarzu.');
+      await dialog.alert('Zaznacz przynajmniej jeden dzień w kalendarzu.');
       return;
     }
 
@@ -590,14 +595,15 @@ function ScheduleView({ cityId }) {
     setBulkLoading(false);
 
     if (failures.length === 0) {
-      alert(`Przypisano na ${done} dni.`);
       setBulkOpen(false);
       resetBulkForm();
+      await dialog.alert(`Przypisano na ${done} dni.`);
     } else {
-      alert(
+      await dialog.alert(
         `Przypisano na ${done} dni. Pominięto ${failures.length}:\n` +
         failures.slice(0, 12).join('\n') +
-        (failures.length > 12 ? `\n…i ${failures.length - 12} więcej` : '')
+        (failures.length > 12 ? `\n…i ${failures.length - 12} więcej` : ''),
+        { title: 'Częściowo przypisano', danger: true }
       );
     }
   };
