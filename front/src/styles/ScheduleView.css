@@ -242,30 +242,15 @@
 }
 
 .schedule-employee-name {
-  display: inline-block;
-  width: 100%;
-  padding: 4px 8px;
-  margin: -4px -8px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-weight: 600;
-  text-align: left;
   cursor: pointer;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease,
-    box-shadow 0.2s ease;
+  user-select: none;
+  color: #111;
+  font-weight: normal;
 }
 
-.schedule-employee-name:hover {
-  background: rgba(118, 145, 148, 0.12);
-}
-
-.schedule-employee-name--active {
-  font-weight: 700;
+.schedule-employee-name:focus-visible {
+  outline: 2px solid rgba(118, 145, 148, 0.65);
+  outline-offset: -2px;
 }
 
 .schedule-table__row--highlight-green td {
@@ -275,21 +260,11 @@
     inset 0 0 18px rgba(74, 222, 128, 0.22);
 }
 
-.schedule-table__row--highlight-green .schedule-employee-name--active {
-  color: #14532d;
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.55);
-}
-
 .schedule-table__row--highlight-rose td {
   background: rgba(254, 205, 211, 0.48) !important;
   box-shadow:
     inset 0 0 0 2px rgba(244, 63, 94, 0.7),
     inset 0 0 18px rgba(251, 113, 133, 0.22);
-}
-
-.schedule-table__row--highlight-rose .schedule-employee-name--active {
-  color: #881337;
-  box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.5);
 }
 
 .schedule-table__row--highlighted td:first-child {

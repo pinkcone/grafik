@@ -47,16 +47,21 @@ function EmployeesScheduleTable({
 
             return (
               <tr key={emp.id} className={rowClass}>
-                <td className="schedule-table__name-cell">
-                  <button
-                    type="button"
-                    className={`schedule-employee-name${isHighlighted ? ' schedule-employee-name--active' : ''}`}
-                    onClick={() => onToggleEmployeeHighlight(emp.id)}
-                    title={isHighlighted ? 'Odznacz wiersz' : 'Podświetl wiersz'}
-                    aria-pressed={isHighlighted}
-                  >
-                    {emp.last_name} {emp.first_name}
-                  </button>
+                <td
+                  className="schedule-table__name-cell schedule-employee-name"
+                  onClick={() => onToggleEmployeeHighlight(emp.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onToggleEmployeeHighlight(emp.id);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={isHighlighted}
+                  title={isHighlighted ? 'Odznacz wiersz' : 'Podświetl wiersz'}
+                >
+                  {emp.last_name} {emp.first_name}
                 </td>
                 {days.map((day) => {
                   const date = buildDate(year, month, day);
