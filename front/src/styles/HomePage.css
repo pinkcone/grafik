@@ -1,5 +1,5 @@
 .mainHome {
-    min-height: calc(100vh - 72px);
+    min-height: calc(100vh - var(--app-header-height, 76px));
     background: linear-gradient(180deg, #e0f0f0 0%, #d4e8e8 100%);
     display: flex;
     flex-direction: row;
@@ -7,5 +7,5 @@
     align-items: flex-start;
     justify-content: center;
     flex-wrap: wrap;
-    padding: 32px 20px 40px;
+    padding: 24px 20px 40px;
 }

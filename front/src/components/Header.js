@@ -55,6 +55,25 @@ function Header({ onLogout }) {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [panelOpen]);
 
+  const [compact, setCompact] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => {
+      setCompact(window.scrollY > 20);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      '--app-header-height',
+      compact ? '52px' : '76px'
+    );
+    return () => document.documentElement.style.removeProperty('--app-header-height');
+  }, [compact]);
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     window.dispatchEvent(new Event('grafik-auth'));
@@ -75,7 +94,7 @@ function Header({ onLogout }) {
   };
 
   return (
-    <header className="app-header">
+    <header className={`app-header${compact ? ' app-header--compact' : ''}`}>
       <div className="app-header__inner">
         <button type="button" className="app-header__brand" onClick={handleStartPage}>
           <span className="app-header__logo" aria-hidden="true">G</span>

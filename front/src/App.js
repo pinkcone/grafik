@@ -31,9 +31,10 @@ function App() {
   return (
     <NotificationsProvider>
       <DialogProvider>
-      <div>
+      <div className="app-shell">
         {token && <Header onLogout={() => setToken(null)} />}
 
+        <main className={token ? 'app-main' : undefined}>
         <Routes>
         {token ? (
           <>
@@ -51,6 +52,7 @@ function App() {
           </>
         )}
       </Routes>
+        </main>
       </div>
       </DialogProvider>
     </NotificationsProvider>
