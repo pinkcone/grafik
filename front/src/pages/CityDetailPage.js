@@ -542,11 +542,7 @@ function CityDetailPage() {
               {' '}Specjalne uprawnienia
             </label>
           </div>
-          <button
-            type="submit"
-            className="btn-primary"
-            onClick={() => logEmployeeLicense('2b. kliknięto przycisk Zapisz', { kategoria: empLicenseCategory || null })}
-          >
+          <button type="submit" className="btn-primary">
             {employeeModalMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}
           </button>
         </form>
@@ -638,11 +634,7 @@ function CityDetailPage() {
                 ))}
             </select>
           </div>
-          <button
-            type="submit"
-            className="btn-primary"
-            onClick={() => logRouteLicense('2b. kliknięto przycisk Zapisz', { kategoria: routeLicenseCategory || null })}
-          >
+          <button type="submit" className="btn-primary">
             {routeModalMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}
           </button>
         </form>

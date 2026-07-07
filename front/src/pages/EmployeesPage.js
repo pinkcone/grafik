@@ -224,11 +224,7 @@ function EmployeesPage() {
               {' '}Specjalne uprawnienia
             </label>
           </div>
-          <button
-            type="submit"
-            className="btn-primary"
-            onClick={() => logEmployeeLicense('2b. kliknięto przycisk Zapisz', { kategoria: licenseCategory || null })}
-          >
+          <button type="submit" className="btn-primary">
             {popupMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}
           </button>
         </form>

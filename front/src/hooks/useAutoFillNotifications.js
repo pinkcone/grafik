@@ -23,11 +23,6 @@ export default function useAutoFillNotifications({
       const debug = n.result?.debug;
       if (!debug) return;
       applyDebug(debug);
-      console.group('[Auto-fill] Diagnostyka');
-      console.log('Podsumowanie po zapisie:', debug.afterPersist?.summary);
-      console.log('Pominięte zapisy:', debug.persistSkipped);
-      (debug.logs || []).forEach((line) => console.log(line));
-      console.groupEnd();
     };
 
     const applyCompletedJob = async (n) => {

@@ -360,11 +360,7 @@ function RoutesPage() {
             selectedDays={operatingDays}
             onChange={setOperatingDays}
           />
-          <button
-            type="submit"
-            className="btn-primary"
-            onClick={() => logRouteLicense('2b. kliknięto przycisk Zapisz', { kategoria: requiredLicenseCategory || null })}
-          >
+          <button type="submit" className="btn-primary">
             {popupMode === 'add' ? 'Dodaj' : 'Zaktualizuj'}
           </button>
         </form>
